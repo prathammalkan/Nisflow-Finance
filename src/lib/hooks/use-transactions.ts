@@ -1,0 +1,239 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
+
+export type TransactionFilters = {
+  account_id?: string;
+  category_id?: string;
+  transaction_type?: string[];
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  ownership?: string;
+  status?: string[];
+  counterparty_id?: string;
+  min_amount?: number;
+  max_amount?: number;
+  tags?: string[];
+  reconciliation_status?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+};
+
+export function useTransactions(filters: TransactionFilters = {}) {
+  const supabase = createClient();
+  const {
+    page = 1,
+    pageSize = 50,
+    sortBy = 'date',
+    sortOrder = 'desc',
+    ...restFilters
+  } = filters;
+
+  return useQuery({
+    queryKey: ['transactions', filters],
+    queryFn: async () => {
+      let query = supabase
+        .from('transactions')
+        .select(`
+          *,
+          account:accounts(id, name, type),
+          category:categories(id, name, icon),
+          counterparty:counterparties(id, name)
+        `, { count: 'exact' });
+
+      // Apply filters
+      if (restFilters.account_id) query = query.eq('account_id', restFilters.account_id);
+      if (restFilters.category_id) query = query.eq('category_id', restFilters.category_id);
+      if (restFilters.transaction_type?.length) query = query.in('type', restFilters.transaction_type);
+      if (restFilters.status?.length) query = query.in('status', restFilters.status);
+      if (restFilters.date_from) query = query.gte('date', restFilters.date_from);
+      if (restFilters.date_to) query = query.lte('date', restFilters.date_to);
+      if (restFilters.ownership) query = query.eq('ownership', restFilters.ownership);
+      if (restFilters.counterparty_id) query = query.eq('counterparty_id', restFilters.counterparty_id);
+      if (restFilters.min_amount) query = query.gte('amount', restFilters.min_amount);
+      if (restFilters.max_amount) query = query.lte('amount', restFilters.max_amount);
+      if (restFilters.reconciliation_status) query = query.eq('reconciliation_status', restFilters.reconciliation_status);
+      if (restFilters.search) {
+        query = query.or(`description.ilike.%${restFilters.search}%,notes.ilike.%${restFilters.search}%`);
+      }
+
+      // Pagination & Sorting
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      
+      query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
+      
+      if (error) throw error;
+      
+      return { 
+        data, 
+        total: count || 0,
+        page,
+        pageSize
+      };
+    },
+  });
+}
+
+export function useTransaction(id: string) {
+  const supabase = createClient();
+  return useQuery({
+    queryKey: ['transactions', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select(`
+          *,
+          account:accounts(*),
+          category:categories(*),
+          counterparty:counterparties(*),
+          linked_transaction:transactions!linked_transaction_id(*)
+        `)
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useCreateTransaction() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (newTransaction: any) => {
+      const { data, error } = await supabase
+        .from('transactions')
+        // @ts-ignore
+        .insert([newTransaction] as any)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Balance updates
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      toast.success('Transaction created successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to create transaction: ' + error.message);
+    }
+  });
+}
+
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string } & any) => {
+      const { data, error } = await supabase
+        .from('transactions')
+        // @ts-ignore
+        .update(updates as any)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Transaction updated successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to update transaction: ' + error.message);
+    }
+  });
+}
+
+export function useDeleteTransaction() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('transactions')
+        // @ts-ignore
+        .update({ is_deleted: true } as any) // Soft delete
+        .eq('id', id);
+      
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Transaction deleted');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete transaction: ' + error.message);
+    }
+  });
+}
+
+export function useTransactionStats(month?: number, year?: number) {
+  const supabase = createClient();
+  
+  return useQuery({
+    queryKey: ['transaction_stats', month, year],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_transaction_stats', { 
+        p_month: month, 
+        p_year: year 
+      } as any);
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useLinkTransactions() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async ({ fromId, toId }: { fromId: string; toId: string }) => {
+      // Begin a simple update for both
+      const { error: err1 } = await supabase
+        .from('transactions')
+        // @ts-ignore
+        .update({ linked_transaction_id: toId } as any)
+        .eq('id', fromId);
+      if (err1) throw err1;
+
+      const { error: err2 } = await supabase
+        .from('transactions')
+        // @ts-ignore
+        .update({ linked_transaction_id: fromId } as any)
+        .eq('id', toId);
+      if (err2) throw err2;
+
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      toast.success('Transactions linked successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to link transactions: ' + error.message);
+    }
+  });
+}
