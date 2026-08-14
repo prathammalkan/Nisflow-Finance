@@ -5,9 +5,10 @@ import { formatINR } from '@/lib/finance/money';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, LineChart, Line } from 'recharts';
 import { format } from 'date-fns';
 import { Wallet } from 'lucide-react';
+import { BudgetSection } from '@/components/spending/budget-section';
 
 export default function SpendingPage() {
   const now = new Date();
@@ -192,6 +193,8 @@ export default function SpendingPage() {
           </CardContent>
         </Card>
       </div>
+
+      <BudgetSection />
     </div>
   );
 }
