@@ -3,6 +3,7 @@
 import { Search, Bell, Sun, Moon, Menu, Plus } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { GlobalSearch } from "@/components/search/global-search";
 
 interface HeaderProps {
   collapsed: boolean;
@@ -22,16 +23,8 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
       </button>
 
       <div className="flex flex-1 items-center gap-4">
-        <div className="relative w-full max-w-md hidden md:flex">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <input
-            type="search"
-            placeholder="Search transactions, accounts..."
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pl-9 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          <kbd className="pointer-events-none absolute right-2.5 top-2.5 hidden h-4 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-            <span className="text-xs">⌘</span>K
-          </kbd>
+        <div className="w-full max-w-md hidden md:flex">
+          <GlobalSearch />
         </div>
       </div>
 

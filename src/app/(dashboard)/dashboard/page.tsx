@@ -9,6 +9,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Wallet, TrendingUp, TrendingDown, PiggyBank, BarChart3, Users, AlertCircle, CheckCircle2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { format } from 'date-fns';
+import { FinancialHealth } from '@/components/dashboard/financial-health';
+import { MoneyFlow } from '@/components/dashboard/money-flow';
+import { NetWorthBreakdown } from '@/components/dashboard/net-worth-breakdown';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -235,6 +238,10 @@ export default function DashboardPage() {
           {statsLoading ? <Skeleton className="h-4 w-16" /> : `${stats?.reconciledCount || 0} of ${stats?.totalAccounts || 0} accounts reconciled`}
         </div>
       </div>
+
+      <FinancialHealth />
+      <MoneyFlow />
+      <NetWorthBreakdown />
     </div>
   );
 }
