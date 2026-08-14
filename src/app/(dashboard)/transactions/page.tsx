@@ -122,10 +122,14 @@ export default function TransactionsPage() {
 
       <TransactionFilters filters={filters} onChange={handleFilterChange} />
 
-      <DataTable 
-        columns={columns} 
-        data={data?.data || []} 
-      />
+      <div className="overflow-x-auto">
+        <div className="min-w-[800px]">
+          <DataTable 
+            columns={columns} 
+            data={data?.data || []} 
+          />
+        </div>
+      </div>
 
       <TransactionForm 
         open={isFormOpen} 

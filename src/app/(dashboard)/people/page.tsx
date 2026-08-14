@@ -34,7 +34,7 @@ export default function PeoplePage() {
         <PersonForm />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <div className="p-4 bg-green-50 border border-green-100 rounded-lg">
           <div className="text-sm text-green-600 font-medium">Total Receivable</div>
           <div className="text-2xl font-bold text-green-700">{formatINR(totals.receivable.toNumber())}</div>
@@ -59,7 +59,7 @@ export default function PeoplePage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1,2,3].map(i => (
             <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
           ))}
@@ -69,7 +69,7 @@ export default function PeoplePage() {
           <h3 className="text-lg font-medium text-muted-foreground">No people found</h3>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPeople.map(person => (
             <PersonCard key={person.id} person={person} />
           ))}

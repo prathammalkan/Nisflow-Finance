@@ -4,6 +4,7 @@ import { Search, Bell, Sun, Moon, Menu, Plus } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "@/components/search/global-search";
+import { NotificationPanel } from "@/components/notifications/notification-panel";
 
 interface HeaderProps {
   collapsed: boolean;
@@ -17,7 +18,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b bg-background px-4 shadow-sm sm:px-6">
       <button
         onClick={() => setIsMobileOpen(true)}
-        className="lg:hidden flex h-9 w-9 items-center justify-center rounded-md border bg-background hover:bg-muted"
+        className="md:hidden flex h-9 w-9 items-center justify-center rounded-md border bg-background hover:bg-muted"
       >
         <Menu size={18} />
       </button>
@@ -43,10 +44,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
           <span className="sr-only">Toggle theme</span>
         </button>
 
-        <button className="inline-flex h-9 w-9 relative items-center justify-center rounded-md border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground">
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-destructive" />
-        </button>
+        <NotificationPanel />
       </div>
     </header>
   );

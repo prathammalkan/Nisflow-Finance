@@ -61,7 +61,7 @@ export default function AccountsPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex flex-col space-y-3">
               <Skeleton className="h-[200px] w-full rounded-xl" />
@@ -73,7 +73,7 @@ export default function AccountsPage() {
           Failed to load accounts. Please try again.
         </div>
       ) : accounts && accounts.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {accounts.map(account => (
             <AccountCard key={account.id} account={account} />
           ))}

@@ -89,7 +89,7 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
       {/* Mobile Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
@@ -99,7 +99,7 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r bg-sidebar transition-all duration-300",
           collapsed ? "w-[72px]" : "w-[260px]",
-          isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         <div className="flex h-14 items-center justify-between border-b px-4">
@@ -113,7 +113,7 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
           </div>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+            className="hidden md:flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
           >
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>

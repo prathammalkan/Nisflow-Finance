@@ -12,6 +12,8 @@ import { format } from 'date-fns';
 import { FinancialHealth } from '@/components/dashboard/financial-health';
 import { MoneyFlow } from '@/components/dashboard/money-flow';
 import { NetWorthBreakdown } from '@/components/dashboard/net-worth-breakdown';
+import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
+import { cn } from '@/lib/utils';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -29,14 +31,18 @@ export default function DashboardPage() {
     return 'Good evening';
   };
 
+  const needsOnboarding = !statsLoading && (stats?.totalAccounts || 0) === 0;
+
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
+    <>
+      {needsOnboarding && <OnboardingWizard />}
+      <div className={cn("flex-1 space-y-4 p-4 md:p-8 pt-6", needsOnboarding && "blur-sm pointer-events-none select-none")}>
+        <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
         <div className="text-muted-foreground">{greeting()}</div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
         {statsLoading ? (
           Array(8).fill(0).map((_, i) => <Skeleton key={i} className="h-32 w-full rounded-xl" />)
         ) : (
@@ -199,8 +205,9 @@ export default function DashboardPage() {
           {recentLoading ? (
             <Skeleton className="h-48 w-full" />
           ) : recent && recent.length > 0 ? (
-            <div className="space-y-4">
-              {recent.map((tx: any) => (
+            <div className="space-y-4 overflow-x-auto min-w-full">
+              <div className="min-w-[400px]">
+                {recent.map((tx: any) => (
                 <div key={tx.id} className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0">
                   <div>
                     <p className="text-sm font-medium">{tx.description || 'Unnamed Transaction'}</p>
@@ -217,7 +224,8 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground py-4">No recent transactions</div>
@@ -242,6 +250,7 @@ export default function DashboardPage() {
       <FinancialHealth />
       <MoneyFlow />
       <NetWorthBreakdown />
-    </div>
+      </div>
+    </>
   );
 }
