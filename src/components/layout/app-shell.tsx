@@ -1,16 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { cn } from "@/lib/utils";
+import { useBiometricLock } from "@/lib/hooks/use-biometric-lock";
+import { BiometricLockModal } from "@/components/auth/biometric-lock-modal";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const { isLocked, authenticateBiometrics, loading } = useBiometricLock();
+
+  useEffect(() => {
+    if (isLocked) {
+      authenticateBiometrics();
+    }
+  }, [isLocked, authenticateBiometrics]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <BiometricLockModal
+        isOpen={isLocked}
+        onAuthenticate={authenticateBiometrics}
+        loading={loading}
+      />
+
       <Sidebar 
         collapsed={collapsed} 
         setCollapsed={setCollapsed} 
