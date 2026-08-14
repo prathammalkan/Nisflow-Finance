@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useDashboardStats, useMonthlyTrend, useSpendingByCategory, useRecentTransactions } from '@/lib/hooks/use-dashboard';
 import { formatINR } from '@/lib/finance/money';
 import { StatCard } from '@/components/ui/stat-card';
@@ -23,6 +24,15 @@ export default function DashboardPage() {
   const now = new Date();
   const { data: categories, isLoading: categoriesLoading } = useSpendingByCategory(now.getMonth() + 1, now.getFullYear());
   const { data: recent, isLoading: recentLoading } = useRecentTransactions(10);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && localStorage.getItem('nisflow_onboarding_completed') === 'true') {
+        setOnboardingDismissed(true);
+      }
+    } catch (e) {}
+  }, []);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -31,11 +41,13 @@ export default function DashboardPage() {
     return 'Good evening';
   };
 
-  const needsOnboarding = !statsLoading && (stats?.totalAccounts || 0) === 0;
+  const needsOnboarding = !statsLoading && (stats?.totalAccounts || 0) === 0 && !onboardingDismissed;
 
   return (
     <>
-      {needsOnboarding && <OnboardingWizard />}
+      {needsOnboarding && (
+        <OnboardingWizard onComplete={() => setOnboardingDismissed(true)} />
+      )}
       <div className={cn("flex-1 space-y-4 p-4 md:p-8 pt-6", needsOnboarding && "blur-sm pointer-events-none select-none")}>
         <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>

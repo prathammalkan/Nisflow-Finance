@@ -8,7 +8,11 @@ import { Building2, Wallet, Tags, Upload, CheckCircle2, ArrowRight } from 'lucid
 import { AccountForm } from '@/components/accounts/account-form';
 import { useAccounts } from '@/lib/hooks/use-accounts';
 
-export function OnboardingWizard() {
+interface OnboardingWizardProps {
+  onComplete?: () => void;
+}
+
+export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState(1);
   const router = useRouter();
   const { data: accounts } = useAccounts();
@@ -21,9 +25,16 @@ export function OnboardingWizard() {
   const skipStep = () => nextStep();
   
   const finishOnboarding = () => {
-    // We could update a user profile flag here if we had one.
-    // For now, reloading or dismissing is enough.
-    window.location.reload();
+    try {
+      localStorage.setItem('nisflow_onboarding_completed', 'true');
+    } catch (e) {
+      console.error(e);
+    }
+    if (onComplete) {
+      onComplete();
+    } else {
+      window.location.reload();
+    }
   };
 
   return (
@@ -57,7 +68,7 @@ export function OnboardingWizard() {
                 </p>
               </CardContent>
               <CardFooter className="flex justify-between">
-                <Button variant="ghost" onClick={skipStep}>Skip Onboarding</Button>
+                <Button variant="ghost" onClick={finishOnboarding}>Skip Onboarding</Button>
                 <Button onClick={nextStep}>Get Started <ArrowRight className="ml-2 h-4 w-4" /></Button>
               </CardFooter>
             </>
