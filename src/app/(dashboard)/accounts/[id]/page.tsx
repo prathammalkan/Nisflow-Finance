@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatINR } from '@/lib/finance/money';
 import { ArrowLeftIcon, PencilIcon, TrashIcon, AlertCircleIcon } from 'lucide-react';
 import { AccountForm } from '@/components/accounts/account-form';
+import { generatePrintablePDFStatement } from '@/lib/export-statement';
 import { cn } from '@/lib/utils';
 // Placeholder for transactions - in a real app use hooks
 import { Decimal } from 'decimal.js';
@@ -67,6 +68,29 @@ export default function AccountDetailPage() {
             </div>
           </div>
           <div className="flex space-x-2">
+            <Button variant="outline" size="sm" onClick={() => {
+              generatePrintablePDFStatement({
+                title: `Account Statement: ${account.name}`,
+                subtitle: `Institution: ${account.institution || 'N/A'} | Type: ${account.type || 'Account'}`,
+                entityName: account.name,
+                entityType: 'Account',
+                rows: [
+                  {
+                    date: new Date().toISOString().split('T')[0],
+                    description: 'Current Account Balance',
+                    type: 'Balance',
+                    inflow: Number(account.current_balance) > 0 ? Number(account.current_balance) : 0,
+                    outflow: Number(account.current_balance) < 0 ? Math.abs(Number(account.current_balance)) : 0,
+                    balance: Number(account.current_balance),
+                  }
+                ],
+                totalIn: stats ? stats.inflow : 0,
+                totalOut: stats ? stats.outflow : 0,
+                closingBalance: Number(account.current_balance),
+              });
+            }}>
+              Print PDF Statement
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setIsEditFormOpen(true)}>
               <PencilIcon className="mr-2 h-4 w-4" />
               Edit

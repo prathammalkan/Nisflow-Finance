@@ -10,12 +10,32 @@ import { useMonthlyClosings, useCloseMonth, useReopenMonth } from '@/lib/hooks/u
 import { exportFullUserBackupJSON, exportFullUserBackupSQL } from '@/lib/export-backup';
 import { useBiometricLock } from '@/lib/hooks/use-biometric-lock';
 import { useWebNotifications } from '@/lib/hooks/use-web-notifications';
-import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2 } from 'lucide-react';
+import { useProfile, useUpdateProfile } from '@/lib/hooks/use-profile';
+import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2 } from 'lucide-react';
 
 export default function SettingsPage() {
   const currentDate = new Date();
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
+  
+  const { data: profile, isLoading: isProfileLoading } = useProfile();
+  const { mutateAsync: updateProfile, isPending: isUpdatingProfile } = useUpdateProfile();
+  const [displayNameInput, setDisplayNameInput] = useState('');
+  const [hasInitializedName, setHasInitializedName] = useState(false);
+
+  if (profile && !hasInitializedName) {
+    setDisplayNameInput(profile.displayName);
+    setHasInitializedName(true);
+  }
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayNameInput.trim()) {
+      toast.error('Display name cannot be empty');
+      return;
+    }
+    await updateProfile({ displayName: displayNameInput.trim() });
+  };
   
   const { data: closings } = useMonthlyClosings();
   const { mutateAsync: closeMonth, isPending: isClosing } = useCloseMonth();
@@ -94,8 +114,50 @@ export default function SettingsPage() {
     <div className="space-y-8 max-w-5xl mx-auto pb-12">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings & Security</h1>
-        <p className="text-muted-foreground mt-1">Manage hardware protection, backups, device notifications, and month-end closing.</p>
+        <p className="text-muted-foreground mt-1">Manage profile, hardware protection, backups, device notifications, and month-end closing.</p>
       </div>
+
+      {/* 0. Profile Settings (Synced with Supabase) */}
+      <section className="bg-card text-card-foreground p-6 rounded-xl border shadow-sm space-y-4">
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <User className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold">User Profile & Account</h2>
+            <p className="text-sm text-muted-foreground">Synchronized with Supabase Auth and User Database.</p>
+          </div>
+        </div>
+
+        {isProfileLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading user profile...
+          </div>
+        ) : (
+          <form onSubmit={handleSaveProfile} className="space-y-4 max-w-md pt-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none">Email Address</label>
+              <Input value={profile?.email || ""} disabled className="bg-muted text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Managed by Supabase Authentication</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none">Display Name</label>
+              <Input
+                value={displayNameInput}
+                onChange={(e) => setDisplayNameInput(e.target.value)}
+                placeholder="Your Full Name"
+                disabled={isUpdatingProfile}
+              />
+            </div>
+
+            <Button type="submit" disabled={isUpdatingProfile} className="gap-2">
+              {isUpdatingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isUpdatingProfile ? "Saving..." : "Save Profile Changes"}
+            </Button>
+          </form>
+        )}
+      </section>
 
       {/* 1. Offline Backups & Data Export */}
       <section className="bg-card text-card-foreground p-6 rounded-xl border shadow-sm space-y-4">
