@@ -12,6 +12,9 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCreateTransaction } from '@/lib/hooks/use-transactions';
+import { useCategories } from '@/lib/hooks/use-categories';
+import { useAccounts } from '@/lib/hooks/use-accounts';
+import { Sparkles, Loader2 } from 'lucide-react';
 import Decimal from 'decimal.js';
 import { format } from 'date-fns';
 
@@ -52,8 +55,11 @@ const formSchema = z.object({
 
 export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
   const [isAdvanced, setIsAdvanced] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   
   const createTransaction = useCreateTransaction();
+  const { data: categories } = useCategories();
+  const { data: accounts } = useAccounts(false);
 
   const form = useForm<any>({
     resolver: zodResolver(formSchema),
@@ -68,6 +74,31 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
   });
 
   const transactionType = form.watch('type');
+
+  const suggestCategory = async () => {
+    const description = form.getValues('description');
+    if (!description) return;
+    
+    setIsSuggesting(true);
+    try {
+      const res = await fetch('/api/ai/categorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.categoryId) {
+          form.setValue('category_id', data.categoryId);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to suggest category', e);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
@@ -165,9 +196,9 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
                   onChange={(e) => form.setValue('account_id', e.target.value)}
                 >
                   <option value="" disabled>Select account...</option>
-                  <option value="acc_1">HDFC Bank</option>
-                  <option value="acc_2">SBI</option>
-                  <option value="acc_3">Cash</option>
+                  {accounts?.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
                 </Select>
                 {form.formState.errors.account_id && (
                   <p className="text-sm text-red-500">{form.formState.errors.account_id.message as string}</p>
@@ -182,9 +213,9 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
                     onChange={(e) => form.setValue('to_account_id', e.target.value)}
                   >
                     <option value="" disabled>Select account...</option>
-                    <option value="acc_1">HDFC Bank</option>
-                    <option value="acc_2">SBI</option>
-                    <option value="acc_3">Cash</option>
+                    {accounts?.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
                   </Select>
                   {form.formState.errors.to_account_id && (
                     <p className="text-sm text-red-500">{form.formState.errors.to_account_id.message as string}</p>
@@ -195,15 +226,30 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
 
             {transactionType !== 'Transfer' && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Category</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Category</label>
+                  {form.watch('description') && (
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={suggestCategory}
+                      disabled={isSuggesting}
+                      className="h-6 px-2 text-xs text-primary"
+                    >
+                      {isSuggesting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                      Suggest
+                    </Button>
+                  )}
+                </div>
                 <Select 
                   value={form.watch('category_id') || ''} 
                   onChange={(e) => form.setValue('category_id', e.target.value)}
                 >
                   <option value="" disabled>Select category...</option>
-                  <option value="cat_1">Food</option>
-                  <option value="cat_2">Transport</option>
-                  <option value="cat_3">Salary</option>
+                  {categories?.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </Select>
               </div>
             )}

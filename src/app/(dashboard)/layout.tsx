@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { CompanionDrawer } from "@/components/ai/companion-drawer";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -10,5 +11,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/login");
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      {children}
+      <CompanionDrawer />
+    </AppShell>
+  );
 }

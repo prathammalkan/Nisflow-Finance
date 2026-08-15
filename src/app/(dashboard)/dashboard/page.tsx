@@ -17,6 +17,7 @@ import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { cn } from '@/lib/utils';
 import { useSaveNetWorthSnapshot } from '@/lib/hooks/use-net-worth-history';
 import { NetWorthChart } from '@/components/dashboard/net-worth-chart';
+import { AiInsightCard } from '@/components/dashboard/ai-insight-card';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -126,6 +127,10 @@ export default function DashboardPage() {
             />
           </>
         )}
+      </div>
+
+      <div className="mb-4">
+        <AiInsightCard />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
