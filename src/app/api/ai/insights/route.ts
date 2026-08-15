@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     // Use Gemini to generate insight
     const { text } = await generateText({
-      model: google('gemini-3.5-flash'),
+      model: google('gemini-2.0-flash'),
       system: 'You are NisFlow Finance, an expert and encouraging financial assistant. Review the provided list of the user\'s transactions for this month. Write a short, highly professional, 2-3 paragraph markdown summary. Point out their biggest expense category, applaud any savings/income, and give one actionable tip for the rest of the month. Use ₹ for currency. Do not list out every transaction. Be concise.',
       prompt: `Here are my transactions for this month:\n\n${summary}`,
     });

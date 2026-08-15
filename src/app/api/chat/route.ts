@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: google('gemini-3.5-flash'),
+    model: google('gemini-2.0-flash'),
     system: 'You are NisFlow Finance, an expert and highly professional AI financial companion. You help the user understand their finances, find transactions, explain spending, and offer savings advice. Always be concise. Format currency in INR (₹). Use the tools available to fetch data before answering questions about their finances.',
     messages,
     tools: {
@@ -49,10 +49,10 @@ export async function POST(req: Request) {
         parameters: z.object({}),
         execute: async (_args: {}) => {
           const { data, error } = await supabase
-            .from('net_worth_snapshots')
-            .select('net_worth, personal_cash, investments, period')
+            .from('net_worth_history')
+            .select('total_net_worth, personal_cash, investments, date')
             .eq('user_id', user.id)
-            .order('snapshot_date', { ascending: false })
+            .order('date', { ascending: false })
             .limit(1);
             
           if (error) return { error: error.message };
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         execute: async (_args: {}) => {
           const { data, error } = await supabase
             .from('accounts')
-            .select('name, account_type, current_balance')
+            .select('name, type, balance')
             .eq('user_id', user.id)
             .eq('is_active', true);
             

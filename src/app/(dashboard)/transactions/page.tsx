@@ -163,10 +163,19 @@ export default function TransactionsPage() {
 
       {/* Desktop: Table view */}
       <div className="hidden md:block overflow-x-auto">
-        <DataTable 
-          columns={columns} 
-          data={data?.data || []} 
-        />
+        {isLoading ? (
+          <div className="space-y-4">
+            <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-14 w-full rounded-md bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <DataTable 
+            columns={columns} 
+            data={data?.data || []} 
+          />
+        )}
       </div>
 
       {((data?.total ?? 0) > (filters.pageSize || 20)) && (

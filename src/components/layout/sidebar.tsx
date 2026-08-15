@@ -122,6 +122,7 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
 
       {/* Sidebar */}
       <aside
+        data-state={isMobileOpen ? 'open' : 'closed'}
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r bg-sidebar transition-all duration-300",
           collapsed ? "w-[72px]" : "w-[260px]",

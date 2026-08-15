@@ -40,8 +40,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
         .select(`
           *,
           account:accounts(id, name, type),
-          category:categories(id, name, icon),
-          counterparty:counterparties(id, name)
+          category:categories(id, name, icon)
         `, { count: 'exact' });
 
       // Apply filters
@@ -91,9 +90,7 @@ export function useTransaction(id: string) {
         .select(`
           *,
           account:accounts(*),
-          category:categories(*),
-          counterparty:counterparties(*),
-          linked_transaction:transactions!linked_transaction_id(*)
+          category:categories(*)
         `)
         .eq('id', id)
         .single();

@@ -37,12 +37,13 @@ export default function AccountsPage() {
       <PageHeader 
         title="Accounts" 
         description="Manage your bank accounts, wallets, and investments."
-      >
-        <Button onClick={() => setIsFormOpen(true)}>
-          <PlusIcon className="mr-2 h-4 w-4" />
-          Add Account
-        </Button>
-      </PageHeader>
+        actions={
+          <Button onClick={() => setIsFormOpen(true)}>
+            <PlusIcon className="mr-2 h-4 w-4" />
+            Add Account
+          </Button>
+        }
+      />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
