@@ -6,8 +6,6 @@ export async function proxy(request: NextRequest) {
   return await updateSession(request);
 }
 
-// Alias for Next.js 16 proxy convention
-export { proxy as proxy };
 
 export const config = {
   matcher: [
