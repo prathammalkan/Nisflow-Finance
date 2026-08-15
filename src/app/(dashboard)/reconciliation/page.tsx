@@ -17,8 +17,9 @@ export default function ReconciliationPage() {
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const { data: reconciliations, isLoading: recLoading } = useReconciliations(selectedAccountId);
 
-  // Mock data for UI
-  const ledgerBalance = new Decimal(50000);
+  // Use real balance from the selected account
+  const selectedAccount = accounts?.find((a: any) => a.id === selectedAccountId);
+  const ledgerBalance = new Decimal(selectedAccount?.balance ?? 0);
   const parsedStatementBalance = new Decimal(statementBalance || 0);
   const difference = parsedStatementBalance.minus(ledgerBalance);
   const isReconciled = difference.isZero();

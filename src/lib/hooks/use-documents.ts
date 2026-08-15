@@ -27,7 +27,7 @@ export function useUploadDocument() {
     mutationFn: async ({ file, metadata }: { file: File; metadata: any }) => {
       // 1. Upload to Supabase Storage
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      const fileName = `${crypto.randomUUID()}.${fileExt}`;
       const filePath = `documents/${fileName}`;
       
       const { error: uploadError } = await supabase.storage

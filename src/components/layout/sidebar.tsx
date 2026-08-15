@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useProfile } from "@/lib/hooks/use-profile";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   ArrowRightLeft,
@@ -24,7 +27,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  LogOut
+  LogOut,
 } from "lucide-react";
 
 const navigation = [
@@ -83,6 +86,25 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: profile } = useProfile();
+
+  const displayName = profile?.displayName || "—";
+  const email = profile?.email || "";
+  const initials = displayName
+    .split(" ")
+    .map((w: string) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    toast.success("Signed out successfully");
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <>
@@ -156,17 +178,21 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
 
         <div className="border-t p-4">
           <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-medium">
-              JD
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
+              {initials || "?"}
             </div>
             {!collapsed && (
               <div className="flex flex-1 flex-col overflow-hidden">
-                <span className="truncate text-sm font-medium">John Doe</span>
-                <span className="truncate text-xs text-muted-foreground">john@example.com</span>
+                <span className="truncate text-sm font-medium">{displayName}</span>
+                <span className="truncate text-xs text-muted-foreground">{email}</span>
               </div>
             )}
             {!collapsed && (
-              <button className="text-muted-foreground hover:text-foreground">
+              <button
+                onClick={handleLogout}
+                className="text-muted-foreground hover:text-destructive transition-colors"
+                title="Sign out"
+              >
                 <LogOut size={16} />
               </button>
             )}

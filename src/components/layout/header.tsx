@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sun, Moon, Menu, Plus, LogOut, User, Settings } from "lucide-react";
+import { Sun, Moon, Menu, Plus, LogOut, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "@/components/search/global-search";
 import { NotificationPanel } from "@/components/notifications/notification-panel";
 import { createClient } from "@/lib/supabase/client";
+import { useProfile } from "@/lib/hooks/use-profile";
 import { toast } from "sonner";
 
 interface HeaderProps {
@@ -19,9 +20,16 @@ interface HeaderProps {
 export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const { data: profile } = useProfile();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [addTxOpen, setAddTxOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  const initials = (profile?.displayName || 'U')
+    .split(' ')
+    .map((w: string) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -50,7 +58,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
       </button>
 
       <div className="flex flex-1 items-center gap-4">
-        <div className="w-full max-w-md hidden md:flex">
+        <div className="flex items-center">
           <GlobalSearch />
         </div>
       </div>
@@ -85,7 +93,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
             className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors"
             aria-label="User menu"
           >
-            P
+            {initials}
           </button>
 
           {userMenuOpen && (

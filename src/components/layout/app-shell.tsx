@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { BottomNav } from "./bottom-nav";
 import { cn } from "@/lib/utils";
 import { useBiometricLock } from "@/lib/hooks/use-biometric-lock";
 import { BiometricLockModal } from "@/components/auth/biometric-lock-modal";
@@ -26,25 +27,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         loading={loading}
       />
 
-      <Sidebar 
-        collapsed={collapsed} 
-        setCollapsed={setCollapsed} 
+      <Sidebar
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
       />
-      
-      <div 
+
+      <div
         className={cn(
           "flex flex-1 flex-col transition-all duration-300",
           collapsed ? "lg:pl-[72px]" : "lg:pl-[260px]"
         )}
       >
         <Header collapsed={collapsed} setIsMobileOpen={setIsMobileOpen} />
-        
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+
+        {/* Extra bottom padding on mobile so content isn't hidden behind bottom nav */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto pb-20 md:pb-6 lg:pb-8">
           {children}
         </main>
       </div>
+
+      {/* Mobile bottom nav — only visible on small screens */}
+      <BottomNav />
     </div>
   );
 }
