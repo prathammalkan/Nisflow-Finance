@@ -104,7 +104,7 @@ export default function SpendingPage() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis 
                     dataKey="date" 
-                    tickFormatter={(val) => format(new Date(val), 'MMM dd')} 
+                    tickFormatter={(val) => { try { return format(new Date(val), 'MMM dd'); } catch { return String(val); } }} 
                     className="text-xs text-muted-foreground" 
                   />
                   <YAxis 
@@ -113,7 +113,7 @@ export default function SpendingPage() {
                   />
                   <Tooltip 
                     formatter={(value: any) => formatINR(Number(value))}
-                    labelFormatter={(label: any) => format(new Date(String(label)), 'MMM dd, yyyy')}
+                    labelFormatter={(label: any) => { try { return format(new Date(String(label)), 'MMM dd, yyyy'); } catch { return String(label); } }}
                   />
                   <Line type="monotone" dataKey="amount" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
                 </LineChart>
@@ -140,7 +140,7 @@ export default function SpendingPage() {
                     <div>
                       <p className="text-sm font-medium">{tx.description || 'Unnamed Transaction'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {tx.category?.name || 'Uncategorized'} • {format(new Date(tx.date), 'MMM dd')}
+                        {tx.category?.name || 'Uncategorized'} • {(() => { try { return format(new Date(tx.date), 'MMM dd'); } catch { return String(tx.date); } })()}
                       </p>
                     </div>
                     <div className="text-right">

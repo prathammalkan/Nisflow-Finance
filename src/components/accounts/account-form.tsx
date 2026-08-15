@@ -21,6 +21,20 @@ const accountTypes = [
   'Investment Account', 'Other'
 ];
 
+const typeMapping: Record<string, string> = {
+  'Bank Account': 'bank',
+  'Cash': 'cash',
+  'UPI Wallet': 'wallet',
+  'Credit Card': 'credit_card',
+  'Debit Card': 'bank',
+  'Broker Account': 'investment',
+  'Demat Account': 'investment',
+  'Mutual Fund Account': 'investment',
+  'Fixed Deposit': 'investment',
+  'Investment Account': 'investment',
+  'Other': 'other'
+};
+
 const purposes = ['Master', 'Spending', 'Savings', 'Investment', 'Other'];
 
 const accountSchema = z.object({
@@ -85,29 +99,17 @@ export function AccountForm({ open, onOpenChange, account }: AccountFormProps) {
       const balanceDecimal = new Decimal(data.opening_balance);
       
       if (isEditing && account) {
-        // When editing, we typically don't update opening balance easily as it messes up running balances,
-        // but for simplicity in this form we will pass it
         await updateAccount.mutateAsync({
           id: account.id,
           name: data.name,
-          type: data.type as any,
-          institution: data.institution,
-          purpose: data.purpose,
-          color: data.color,
+          type: (typeMapping[data.type] || 'other') as any,
         } as any);
       } else {
         await createAccount.mutateAsync({
           name: data.name,
-          type: data.type as any,
-          institution: data.institution,
-          purpose: data.purpose,
-          opening_balance: balanceDecimal.toNumber(),
-          current_balance: balanceDecimal.toNumber(), // Initial current balance is opening balance
-          personal_balance: balanceDecimal.toNumber(),
-          third_party_balance: 0,
-          color: data.color,
+          type: (typeMapping[data.type] || 'other') as any,
+          balance: balanceDecimal.toNumber(),
           is_active: true,
-          // user_id will be handled by RLS/database defaults ideally, or we'd need to pass it
         } as any);
       }
       onOpenChange(false);

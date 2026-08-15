@@ -145,9 +145,9 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trend} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
-                  <XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), 'MMM yyyy')} className="text-xs text-muted-foreground" />
+                  <XAxis dataKey="date" tickFormatter={(val) => { try { return format(new Date(val), 'MMM yyyy'); } catch { return String(val); } }} className="text-xs text-muted-foreground" />
                   <YAxis className="text-xs text-muted-foreground" tickFormatter={(val) => `₹${(val/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value: any) => formatINR(Number(value))} labelFormatter={(label: any) => format(new Date(String(label)), 'MMMM yyyy')} />
+                  <Tooltip formatter={(value: any) => formatINR(Number(value))} labelFormatter={(label: any) => { try { return format(new Date(String(label)), 'MMMM yyyy'); } catch { return String(label); } }} />
                   <Area type="monotone" dataKey="income" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.2} name="Income" />
                   <Area type="monotone" dataKey="expense" stackId="2" stroke="#ef4444" fill="#ef4444" fillOpacity={0.2} name="Expense" />
                 </AreaChart>
@@ -252,7 +252,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium">{tx.description || 'Unnamed Transaction'}</p>
                     <p className="text-xs text-muted-foreground">
-                      {tx.account?.name || 'Unknown Account'} • {format(new Date(tx.date), 'MMM dd, yyyy')}
+                      {tx.account?.name || 'Unknown Account'} • {(() => { try { return format(new Date(tx.date), 'MMM dd, yyyy'); } catch { return String(tx.date); } })()}
                     </p>
                   </div>
                   <div className="text-right">
