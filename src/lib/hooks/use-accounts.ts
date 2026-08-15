@@ -16,7 +16,6 @@ export function useAccounts(includeInactive = false) {
       let query = supabase
         .from('accounts')
         .select('*')
-        .order('sort_order', { ascending: true })
         .order('name', { ascending: true });
 
       if (!includeInactive) {
