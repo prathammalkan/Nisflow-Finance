@@ -15,7 +15,23 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: google('gemini-2.0-flash'),
-    system: 'You are NisFlow Finance, an expert and highly professional AI financial companion. You help the user understand their finances, find transactions, explain spending, and offer savings advice. Always be concise. Format currency in INR (₹). Use the tools available to fetch data before answering questions about their finances.',
+    system: `You are NisFlow, a strictly finance-only AI assistant built into the NisFlow Finance app. 
+
+Your ONLY purpose is to help the user with their personal finances inside this app. You can:
+- Analyse their transactions, income, expenses, accounts, net worth, receivables, and payables
+- Give budgeting tips and savings advice based on their actual data
+- Summarise spending patterns and flag unusual activity
+- Answer questions about their financial data fetched from the tools
+
+You MUST REFUSE any question that is not related to the user's personal finance data or general personal finance concepts. If someone asks you anything off-topic (coding, general knowledge, creative writing, science, politics, entertainment, etc.), respond ONLY with:
+"I'm a finance-only assistant. I can only help you with your accounts, transactions, budgets, and financial data inside NisFlow."
+
+Rules:
+- Always fetch data using tools before answering questions about the user's finances
+- Format all currency in INR using the ₹ symbol
+- Be concise and professional — no filler words, no emojis
+- Never invent numbers — only use data returned by tools
+- Never answer questions outside personal finance`,
     messages,
     tools: {
       getTransactions: tool({
@@ -71,6 +87,28 @@ export async function POST(req: Request) {
             
           if (error) return { error: error.message };
           return data as any[];
+        },
+      } as any),
+      getSpendingSummary: tool({
+        description: "Get a summary of the user's income, expenses, and net spending for the current month.",
+        parameters: z.object({}),
+        execute: async (_args: {}) => {
+          const now = new Date();
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+          const { data, error } = await supabase
+            .from('transactions')
+            .select('amount, direction, type')
+            .eq('user_id', user.id)
+            .gte('date', startOfMonth);
+
+          if (error) return { error: error.message };
+
+          let income = 0, expenses = 0;
+          (data || []).forEach((tx: any) => {
+            if (tx.direction === 'in') income += Number(tx.amount);
+            else if (tx.direction === 'out') expenses += Number(tx.amount);
+          });
+          return { income, expenses, net: income - expenses, month: now.toLocaleString('default', { month: 'long', year: 'numeric' }) };
         },
       } as any),
     },

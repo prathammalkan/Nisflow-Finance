@@ -10,14 +10,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Wallet, TrendingUp, TrendingDown, PiggyBank, BarChart3, Users, AlertCircle, CheckCircle2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { format } from 'date-fns';
-import { FinancialHealth } from '@/components/dashboard/financial-health';
-import { MoneyFlow } from '@/components/dashboard/money-flow';
-import { NetWorthBreakdown } from '@/components/dashboard/net-worth-breakdown';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { cn } from '@/lib/utils';
 import { useSaveNetWorthSnapshot } from '@/lib/hooks/use-net-worth-history';
 import { NetWorthChart } from '@/components/dashboard/net-worth-chart';
 import { AiInsightCard } from '@/components/dashboard/ai-insight-card';
+import Link from 'next/link';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -71,10 +69,10 @@ export default function DashboardPage() {
         <OnboardingWizard onComplete={() => setOnboardingDismissed(true)} />
       )}
       <div className={cn("flex-1 space-y-4", needsOnboarding && "blur-sm pointer-events-none select-none")}>
-        <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <div className="text-muted-foreground">{greeting()}</div>
-      </div>
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">{greeting()}</p>
+        </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
         {statsLoading ? (
@@ -256,8 +254,8 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className={`text-sm font-medium ${tx.type === 'income' ? 'text-emerald-500' : tx.type === 'expense' ? 'text-red-500' : ''}`}>
-                      {tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : ''}{formatINR(tx.amount)}
+                    <p className={`text-sm font-semibold ${tx.direction === 'in' ? 'text-emerald-500' : tx.direction === 'out' ? 'text-red-500' : 'text-foreground'}`}>
+                      {tx.direction === 'in' ? '+' : tx.direction === 'out' ? '-' : ''}{formatINR(tx.amount)}
                     </p>
                     {tx.status === 'needs_review' && (
                       <Badge variant="destructive" className="text-[10px] mt-1">Review</Badge>
@@ -269,6 +267,11 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground py-4">No recent transactions</div>
+          )}
+          {recent && recent.length > 0 && (
+            <div className="pt-2 text-center">
+              <Link href="/transactions" className="text-xs text-primary hover:underline">View all transactions →</Link>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -286,11 +289,7 @@ export default function DashboardPage() {
           {statsLoading ? <Skeleton className="h-4 w-16" /> : `${stats?.reconciledCount || 0} of ${stats?.totalAccounts || 0} accounts reconciled`}
         </div>
       </div>
-
-      <FinancialHealth />
-      <MoneyFlow />
-      <NetWorthBreakdown />
-      </div>
+    </div>
     </>
   );
 }
