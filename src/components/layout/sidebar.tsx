@@ -12,6 +12,7 @@ import {
   ArrowRightLeft,
   Wallet,
   CreditCard,
+  CalendarClock,
   Users,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -28,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Calculator,
 } from "lucide-react";
 
 const navigation = [
@@ -41,6 +43,7 @@ const navigation = [
       { name: "Transactions", href: "/transactions", icon: ArrowRightLeft },
       { name: "Accounts", href: "/accounts", icon: Wallet },
       { name: "Spending", href: "/spending", icon: CreditCard },
+      { name: "Recurring", href: "/recurring", icon: CalendarClock },
     ],
   },
   {
@@ -72,6 +75,7 @@ const navigation = [
     title: "System",
     items: [
       { name: "Tax Records", href: "/tax-records", icon: Receipt },
+      { name: "Tax Calculator", href: "/tax-calculator", icon: Calculator },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },

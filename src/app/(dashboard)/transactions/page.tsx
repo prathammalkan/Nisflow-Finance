@@ -12,8 +12,10 @@ import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { TransactionRowActions } from '@/components/transactions/transaction-row-actions';
+import { TransactionSummaryBar } from '@/components/transactions/transaction-summary-bar';
 import { cn } from '@/lib/utils';
 import Decimal from 'decimal.js';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function TransactionsPage() {
   const [filters, setFilters] = useState<any>({
@@ -28,7 +30,11 @@ export default function TransactionsPage() {
   const { data, isLoading } = useTransactions(filters);
 
   const handleFilterChange = (newFilters: any) => {
-    setFilters({ ...filters, ...newFilters, page: 1 });
+    setFilters({ ...filters, ...newFilters });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setFilters((prev: any) => ({ ...prev, page: newPage }));
   };
 
   const columns = [
@@ -122,6 +128,8 @@ export default function TransactionsPage() {
 
       <TransactionFilters filters={filters} onChange={handleFilterChange} />
 
+      <TransactionSummaryBar transactions={data?.data || []} totalCount={data?.total} />
+
       <div className="overflow-x-auto">
         <div className="min-w-[800px]">
           <DataTable 
@@ -130,6 +138,37 @@ export default function TransactionsPage() {
           />
         </div>
       </div>
+
+      {((data?.total ?? 0) > (filters.pageSize || 20)) && (
+        <div className="flex items-center justify-between py-4">
+          <p className="text-sm text-muted-foreground">
+            Showing {data?.data?.length || 0} of {data?.total} transactions
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(filters.page - 1)}
+              disabled={filters.page === 1}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {filters.page} of {Math.ceil((data?.total || 0) / (filters.pageSize || 20))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(filters.page + 1)}
+              disabled={filters.page >= Math.ceil((data?.total || 0) / (filters.pageSize || 20))}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <TransactionForm 
         open={isFormOpen} 

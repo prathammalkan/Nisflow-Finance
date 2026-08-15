@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDashboardStats, useMonthlyTrend, useSpendingByCategory, useRecentTransactions } from '@/lib/hooks/use-dashboard';
 import { formatINR } from '@/lib/finance/money';
 import { StatCard } from '@/components/ui/stat-card';
@@ -15,6 +15,8 @@ import { MoneyFlow } from '@/components/dashboard/money-flow';
 import { NetWorthBreakdown } from '@/components/dashboard/net-worth-breakdown';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
 import { cn } from '@/lib/utils';
+import { useSaveNetWorthSnapshot } from '@/lib/hooks/use-net-worth-history';
+import { NetWorthChart } from '@/components/dashboard/net-worth-chart';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -25,6 +27,25 @@ export default function DashboardPage() {
   const { data: categories, isLoading: categoriesLoading } = useSpendingByCategory(now.getMonth() + 1, now.getFullYear());
   const { data: recent, isLoading: recentLoading } = useRecentTransactions(10);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const saveSnapshot = useSaveNetWorthSnapshot();
+  const hasSaved = useRef(false);
+
+  useEffect(() => {
+    if (!statsLoading && stats && !hasSaved.current) {
+      hasSaved.current = true;
+      saveSnapshot.mutate({
+        personalCash: stats.availablePersonalCash || 0,
+        savings: stats.totalSavings || 0,
+        investments: stats.totalInvestments || 0,
+        receivables: stats.totalReceivables || 0,
+        payables: stats.totalPayables || 0,
+        thirdPartyHeld: stats.thirdPartyHeld || 0,
+        netWorth: stats.personalNetWorth || 0,
+      }, {
+        onError: (err) => console.warn('Failed to auto-save net worth snapshot', err)
+      });
+    }
+  }, [stats, statsLoading, saveSnapshot]);
 
   useEffect(() => {
     try {
@@ -164,6 +185,8 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <NetWorthChart />
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
