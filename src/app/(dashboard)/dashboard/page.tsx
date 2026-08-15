@@ -31,6 +31,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!statsLoading && stats && !hasSaved.current) {
+      // Only save once per day to avoid unnecessary DB writes
+      const today = new Date().toISOString().split('T')[0];
+      const lastSaved = localStorage.getItem('nisflow_snapshot_date');
+      if (lastSaved === today) return;
+
       hasSaved.current = true;
       saveSnapshot.mutate({
         personalCash: stats.availablePersonalCash || 0,
@@ -41,10 +46,12 @@ export default function DashboardPage() {
         thirdPartyHeld: stats.thirdPartyHeld || 0,
         netWorth: stats.personalNetWorth || 0,
       }, {
+        onSuccess: () => localStorage.setItem('nisflow_snapshot_date', today),
         onError: (err) => console.warn('Failed to auto-save net worth snapshot', err)
       });
     }
   }, [stats, statsLoading, saveSnapshot]);
+
 
   useEffect(() => {
     try {
