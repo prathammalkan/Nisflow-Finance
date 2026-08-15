@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import NextTopLoader from "nextjs-toploader";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -36,6 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased selection:bg-primary/20`}>
+        <NextTopLoader color="#10b981" showSpinner={false} />
         <Providers>
           {children}
         </Providers>
