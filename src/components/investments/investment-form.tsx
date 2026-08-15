@@ -1,79 +1,200 @@
-'use client';
+"use client";
 
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { useCreateInvestment } from '@/lib/hooks/use-investments';
-import { Select } from '@/components/ui/select';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { CurrencyInput } from "@/components/ui/currency-input";
 
 const investmentSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  asset_type: z.string().min(1, 'Type is required'),
-  symbol: z.string().optional(),
-  total_invested: z.coerce.number().default(0),
-  current_value: z.coerce.number().default(0),
+  name: z.string().min(1, "Name is required"),
+  ticker: z.string().optional(),
+  type: z.enum(["mutual_fund", "stock", "fd", "bond", "real_estate", "crypto", "other"]),
+  platform: z.string().optional(),
+  units: z.number().positive("Units must be positive").optional(),
+  avg_purchase_price: z.number().positive("Price must be positive").optional(),
+  current_value: z.number().positive("Current value must be positive"),
 });
 
-export function InvestmentForm({ onClose }: { onClose: () => void }) {
-  const createInvestment = useCreateInvestment();
-  const { register, handleSubmit, formState: { errors } } = useForm({
+type InvestmentFormValues = z.infer<typeof investmentSchema>;
+
+export function InvestmentForm({ onSuccess }: { onSuccess?: () => void }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const supabase = createClient();
+
+  const form = useForm<InvestmentFormValues>({
     resolver: zodResolver(investmentSchema),
     defaultValues: {
-      asset_type: 'Stocks'
-    }
+      name: "",
+      ticker: "",
+      type: "mutual_fund",
+      platform: "Zerodha",
+      current_value: 0,
+    },
   });
 
-  const onSubmit = (data: any) => {
-    createInvestment.mutate(data, {
-      onSuccess: () => onClose()
-    });
-  };
+  async function onSubmit(data: InvestmentFormValues) {
+    setIsSubmitting(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("Not authenticated");
+
+      const { error } = await (supabase.from("investments") as any).insert({
+        user_id: userData.user.id,
+        name: data.name,
+        ticker_symbol: data.ticker,
+        asset_class: data.type,
+        platform: data.platform,
+        units: data.units || null,
+        average_purchase_price: data.avg_purchase_price || null,
+        current_value: data.current_value,
+        status: "active",
+      });
+
+      if (error) throw error;
+      
+      toast.success("Investment added successfully");
+      form.reset();
+      onSuccess?.();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to add investment");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Add New Investment</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="text-sm font-medium">Investment Name</label>
-              <input {...register('name')} className="w-full mt-1 p-2 border rounded-md" placeholder="e.g. Reliance Industries" />
-              {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message as string}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-medium">Asset Type</label>
-              <Select {...register('asset_type')} className="w-full mt-1 p-2 border rounded-md bg-white">
-                <option value="Stocks">Stocks</option>
-                <option value="Mutual Fund">Mutual Fund</option>
-                <option value="ETF">ETF</option>
-                <option value="FD">Fixed Deposit</option>
-                <option value="Bonds">Bonds</option>
-                <option value="Other">Other</option>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Symbol/Ticker (Optional)</label>
-              <input {...register('symbol')} className="w-full mt-1 p-2 border rounded-md" placeholder="e.g. RELIANCE" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Initial Invested (₹)</label>
-              <input type="number" step="0.01" {...register('total_invested')} className="w-full mt-1 p-2 border rounded-md" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Current Value (₹)</label>
-              <input type="number" step="0.01" {...register('current_value')} className="w-full mt-1 p-2 border rounded-md" />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={createInvestment.isPending}>Save</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Investment Name</FormLabel>
+                <FormControl>
+                  <Input placeholder="Parag Parikh Flexi Cap" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="ticker"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Ticker / Symbol</FormLabel>
+                <FormControl>
+                  <Input placeholder="PPFAS" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Asset Class</FormLabel>
+                <FormControl>
+                  <Select
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    <option value="mutual_fund">Mutual Fund (SIP)</option>
+                    <option value="stock">Stock</option>
+                    <option value="fd">Fixed Deposit</option>
+                    <option value="bond">Bond</option>
+                    <option value="real_estate">Real Estate</option>
+                    <option value="crypto">Crypto</option>
+                    <option value="other">Other</option>
+                  </Select>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="platform"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Platform / Broker</FormLabel>
+                <FormControl>
+                  <Input placeholder="Zerodha Coin" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="current_value"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Current Value</FormLabel>
+                <FormControl>
+                  <CurrencyInput
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="avg_purchase_price"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Avg Purchase Price (Optional)</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    {...field} 
+                    onChange={e => field.onChange(parseFloat(e.target.value) || undefined)} 
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="flex justify-end pt-4">
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Saving..." : "Add Investment"}
+          </Button>
+        </div>
+      </form>
+    </Form>
   );
 }

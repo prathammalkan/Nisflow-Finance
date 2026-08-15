@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: google('gemini-2.5-flash'),
+    model: google('gemini-3.5-flash'),
     system: 'You are NisFlow Finance, an expert and highly professional AI financial companion. You help the user understand their finances, find transactions, explain spending, and offer savings advice. Always be concise. Format currency in INR (₹). Use the tools available to fetch data before answering questions about their finances.',
     messages,
     tools: {

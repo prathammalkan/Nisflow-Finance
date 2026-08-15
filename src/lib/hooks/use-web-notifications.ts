@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { subscribeUserToPush } from "@/lib/notifications/vapid";
 
 export function useWebNotifications() {
   const [permission, setPermission] = useState<NotificationPermission>("default");
@@ -26,10 +27,18 @@ export function useWebNotifications() {
       setPermission(res);
 
       if (res === "granted") {
+        try {
+          const subscription = await subscribeUserToPush();
+          console.log("Push subscription successful", subscription);
+          // In a real app, send the subscription to your backend database here
+        } catch (subErr) {
+          console.error("Failed to subscribe to push manager", subErr);
+        }
+
         toast.success("Device push notifications enabled!");
         sendNotification("NisFlow Finance", {
           body: "Device push notifications are now active. You will receive alerts for due payments and budgets.",
-          icon: "/icon.svg",
+          icon: "/icon512_rounded.png",
         });
         return true;
       } else {

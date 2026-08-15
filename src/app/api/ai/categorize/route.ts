@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     // Use Gemini to categorize
     const { object } = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: google('gemini-3.5-flash'),
       schema: z.object({
         categoryId: z.string().uuid().describe('The ID of the best matching category'),
         confidence: z.number().min(0).max(1).describe('Confidence score from 0 to 1'),
