@@ -10,27 +10,13 @@ import { InvestmentForm } from "@/components/investments/investment-form";
 import { formatINR } from "@/lib/finance/money";
 import { calculateXIRRDecimal, CashFlow } from "@/lib/finance/xirr";
 import Decimal from "decimal.js";
+import { useInvestments } from "@/lib/hooks/use-investments";
+import { Loader2 } from "lucide-react";
 
 export default function InvestmentsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  // Temporary mock data until React Query hooks are implemented
-  const mockInvestments = [
-    {
-      id: "1",
-      name: "Parag Parikh Flexi Cap",
-      ticker_symbol: "PPFAS",
-      asset_class: "mutual_fund",
-      platform: "Zerodha",
-      current_value: 125000,
-      invested_amount: 100000,
-      cash_flows: [
-        { date: new Date("2023-01-01"), amount: -50000 },
-        { date: new Date("2023-06-01"), amount: -50000 },
-        { date: new Date(), amount: 125000 } // Current value as inflow
-      ]
-    }
-  ];
+  const { data: investments, isLoading } = useInvestments();
 
   return (
     <div className="space-y-6">
@@ -55,12 +41,32 @@ export default function InvestmentsPage() {
       </PageHeader>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {mockInvestments.map(inv => {
-          const absoluteReturn = inv.current_value - inv.invested_amount;
-          const absoluteReturnPct = (absoluteReturn / inv.invested_amount) * 100;
+        {isLoading && (
+          <div className="col-span-full flex justify-center py-12 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading portfolio...
+          </div>
+        )}
+        {!isLoading && investments?.length === 0 && (
+          <div className="col-span-full text-center py-12 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+            No active investments found. Click "Add Investment" to start tracking.
+          </div>
+        )}
+        {investments?.map((inv: any) => {
+          // Aggregate cash flows
+          const txFlows = inv.investment_transactions?.map((tx: any) => ({
+             date: new Date(tx.date),
+             amount: tx.type === 'buy' ? -tx.amount : tx.amount
+          })) || [];
+          
+          const invested_amount = txFlows.filter((f: any) => f.amount < 0).reduce((sum: number, f: any) => sum + Math.abs(f.amount), 0) || inv.current_value;
+
+          const cash_flows = [...txFlows, { date: new Date(), amount: inv.current_value }];
+
+          const absoluteReturn = inv.current_value - invested_amount;
+          const absoluteReturnPct = invested_amount > 0 ? (absoluteReturn / invested_amount) * 100 : 0;
           
           // Calculate XIRR
-          const xirrRaw = calculateXIRRDecimal(inv.cash_flows);
+          const xirrRaw = calculateXIRRDecimal(cash_flows);
           const xirrPct = xirrRaw ? xirrRaw.times(100).toFixed(2) : "N/A";
 
           return (

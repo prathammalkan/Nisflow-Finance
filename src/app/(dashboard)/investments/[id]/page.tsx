@@ -12,7 +12,8 @@ import Decimal from 'decimal.js';
 
 export default function InvestmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
-  const { data: inv, isLoading } = useInvestment(resolvedParams.id);
+  const { data: rawInvestment, isLoading } = useInvestment(resolvedParams.id);
+  const inv = rawInvestment as any;
   const [isTxFormOpen, setIsTxFormOpen] = useState(false);
 
   if (isLoading) return <div className="p-8">Loading Investment Details...</div>;

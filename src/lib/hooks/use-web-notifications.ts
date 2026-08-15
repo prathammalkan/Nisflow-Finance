@@ -29,8 +29,21 @@ export function useWebNotifications() {
       if (res === "granted") {
         try {
           const subscription = await subscribeUserToPush();
-          console.log("Push subscription successful", subscription);
-          // In a real app, send the subscription to your backend database here
+          console.log("Push subscription successful");
+          
+          // Store the subscription in the database
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          
+          if (user) {
+            const subData = JSON.parse(JSON.stringify(subscription));
+            await (supabase.from("push_subscriptions") as any).insert({
+              user_id: user.id,
+              endpoint: subData.endpoint,
+              p256dh: subData.keys.p256dh,
+              auth: subData.keys.auth
+            });
+          }
         } catch (subErr) {
           console.error("Failed to subscribe to push manager", subErr);
         }

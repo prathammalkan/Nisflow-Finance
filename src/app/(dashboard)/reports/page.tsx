@@ -7,11 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Download, FileText, PieChart, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { generateTransactionPDF, TransactionReportData } from "@/lib/reports/pdf-generator";
+import { generateTaxPDF, TaxReportData } from "@/lib/reports/tax-generator";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 export default function ReportsPage() {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingTax, setIsGeneratingTax] = useState(false);
   const supabase = createClient();
 
   const handleDownloadStatement = async () => {
@@ -64,6 +66,64 @@ export default function ReportsPage() {
     }
   };
 
+  const handleDownloadTax = async () => {
+    setIsGeneratingTax(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("Not authenticated");
+
+      const profileRes = await supabase.from('profiles').select('full_name').eq('id', userData.user.id).single();
+      const userName = (profileRes.data as any)?.full_name || userData.user.email || "NisFlow User";
+
+      // Fetch YTD transactions
+      const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('amount, direction, categories!transactions_category_id_fkey(name)')
+        .eq('user_id', userData.user.id)
+        .gte('date', startOfYear.toISOString());
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        toast.error("No transactions found for the current year.");
+        setIsGeneratingTax(false);
+        return;
+      }
+
+      // Aggregate by category
+      const categoryMap = new Map<string, { in: number, out: number }>();
+      data.forEach((tx: any) => {
+        const cat = tx.categories?.name || 'Uncategorized';
+        const amt = Number(tx.amount);
+        if (!categoryMap.has(cat)) {
+          categoryMap.set(cat, { in: 0, out: 0 });
+        }
+        const record = categoryMap.get(cat)!;
+        if (tx.direction === 'in') record.in += amt;
+        else record.out += amt;
+      });
+
+      const taxData: TaxReportData[] = Array.from(categoryMap.entries()).map(([cat, flows]) => ({
+        category: cat,
+        totalIncome: flows.in,
+        totalExpense: flows.out,
+        netImpact: flows.in - flows.out
+      }));
+
+      const yearName = format(new Date(), 'yyyy');
+
+      generateTaxPDF(taxData, yearName, userName);
+      toast.success("Tax Summary generated successfully!");
+
+    } catch (error: any) {
+      toast.error(error.message || "Failed to generate tax report");
+    } finally {
+      setIsGeneratingTax(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -109,9 +169,14 @@ export default function ReportsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <Button className="w-full" variant="outline" disabled>
+            <Button 
+              className="w-full" 
+              variant="outline" 
+              onClick={handleDownloadTax}
+              disabled={isGeneratingTax}
+            >
               <Download className="w-4 h-4 mr-2" />
-              Coming Soon
+              {isGeneratingTax ? "Generating..." : "Download PDF Summary"}
             </Button>
           </CardContent>
         </Card>

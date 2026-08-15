@@ -9,23 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { LoanForm } from "@/components/loans/loan-form";
 import { formatINR } from "@/lib/finance/money";
 import { calculateEMI, generateAmortizationSchedule } from "@/lib/finance/loans";
+import { useLoans } from "@/lib/hooks/use-loans";
+import { Loader2 } from "lucide-react";
 
 export default function LoansPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  // Temporary mock data until React Query hooks are implemented
-  const mockLoans = [
-    {
-      id: "1",
-      name: "Dream Home",
-      lender_name: "HDFC Bank",
-      principal_amount: 5000000,
-      interest_rate: 8.5,
-      tenure_months: 240,
-      start_date: "2023-01-01",
-      remaining_principal: 4800000,
-      status: "active",
-    }
-  ];
+  const { data: loans, isLoading } = useLoans();
 
   return (
     <div className="space-y-6">
@@ -50,7 +39,17 @@ export default function LoansPage() {
       </PageHeader>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {mockLoans.map(loan => {
+        {isLoading && (
+          <div className="col-span-full flex justify-center py-12 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading loans...
+          </div>
+        )}
+        {!isLoading && loans?.length === 0 && (
+          <div className="col-span-full text-center py-12 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+            No active loans found. Click "Add Loan" to start tracking your debt.
+          </div>
+        )}
+        {loans?.map((loan: any) => {
           const emi = calculateEMI(loan.principal_amount, loan.interest_rate, loan.tenure_months);
           const schedule = generateAmortizationSchedule(loan.principal_amount, loan.interest_rate, loan.tenure_months);
           const totalInterest = schedule.reduce((sum, row) => sum + row.interestComponent.toNumber(), 0);
