@@ -117,18 +117,18 @@ export function CompanionDrawer() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (input.trim()) handleSubmit(e);
+              if (input?.trim()) handleSubmit(e);
             }}
             className="flex items-center gap-2"
           >
             <Input
-              value={input}
+              value={input || ''}
               onChange={handleInputChange}
               placeholder="Ask about your finances..."
               className="flex-1"
               disabled={isLoading}
             />
-            <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+            <Button type="submit" size="icon" disabled={isLoading || !input?.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </form>
