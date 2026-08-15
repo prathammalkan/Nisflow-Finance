@@ -130,13 +130,43 @@ export default function TransactionsPage() {
 
       <TransactionSummaryBar transactions={data?.data || []} totalCount={data?.total} />
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[800px]">
-          <DataTable 
-            columns={columns} 
-            data={data?.data || []} 
-          />
-        </div>
+      {/* Mobile: Card view */}
+      <div className="md:hidden space-y-3">
+        {(data?.data || []).map((tx: any) => (
+          <div key={tx.id} className="flex items-center justify-between p-4 rounded-xl border bg-card">
+            <div className="flex-1 min-w-0 mr-3">
+              <p className="text-sm font-medium truncate">{tx.description || 'Unnamed Transaction'}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {tx.account?.name || 'Unknown'} · {format(parseISO(tx.date), 'dd MMM yyyy')}
+              </p>
+              {tx.category?.name && (
+                <p className="text-xs text-muted-foreground">{tx.category.name}</p>
+              )}
+            </div>
+            <div className="text-right shrink-0">
+              <p className={cn("text-sm font-semibold", tx.direction === 'out' ? 'text-red-500' : 'text-emerald-500')}>
+                {tx.direction === 'out' ? '-' : '+'}{formatINR(new Decimal(tx.amount))}
+              </p>
+              <p className="text-[10px] text-muted-foreground capitalize">{tx.type}</p>
+            </div>
+          </div>
+        ))}
+        {isLoading && (
+          <div className="space-y-3">
+            {[1,2,3,4,5].map(i => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}
+          </div>
+        )}
+        {(!data?.data || data.data.length === 0) && !isLoading && (
+          <div className="text-center py-12 text-muted-foreground">No transactions found</div>
+        )}
+      </div>
+
+      {/* Desktop: Table view */}
+      <div className="hidden md:block overflow-x-auto">
+        <DataTable 
+          columns={columns} 
+          data={data?.data || []} 
+        />
       </div>
 
       {((data?.total ?? 0) > (filters.pageSize || 20)) && (

@@ -25,14 +25,14 @@ const typeMapping: Record<string, string> = {
   'Bank Account': 'bank',
   'Cash': 'cash',
   'UPI Wallet': 'wallet',
-  'Credit Card': 'credit_card',
+  'Credit Card': 'credit',
   'Debit Card': 'bank',
   'Broker Account': 'investment',
   'Demat Account': 'investment',
   'Mutual Fund Account': 'investment',
   'Fixed Deposit': 'investment',
   'Investment Account': 'investment',
-  'Other': 'other'
+  'Other': 'bank'
 };
 
 const purposes = ['Master', 'Spending', 'Savings', 'Investment', 'Other'];

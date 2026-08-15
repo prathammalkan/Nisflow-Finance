@@ -58,7 +58,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
       </button>
 
       <div className="flex flex-1 items-center gap-4">
-        <div className="flex items-center">
+        <div className="hidden sm:flex items-center">
           <GlobalSearch />
         </div>
       </div>

@@ -24,7 +24,7 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 flex items-stretch md:hidden"
+      className="fixed bottom-0 inset-x-0 z-40 bg-background border-t border-border flex items-stretch md:hidden"
       aria-label="Mobile navigation"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
@@ -39,7 +39,7 @@ export function BottomNav() {
               "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
               isActive
                 ? "text-primary"
-                : "text-gray-500 hover:text-gray-700 active:text-primary"
+                : "text-muted-foreground hover:text-foreground active:text-primary"
             )}
             aria-current={isActive ? "page" : undefined}
           >

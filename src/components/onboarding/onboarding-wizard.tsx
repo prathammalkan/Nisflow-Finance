@@ -172,8 +172,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   // Setup slide (after tour)
   if (isTourComplete && !done) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4">
-        <div className="w-full max-w-lg">
+      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/90 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="w-full max-w-lg my-auto">
           {/* Progress */}
           <div className="mb-6 flex justify-center gap-1.5">
             {slides.map((_, i) => (
@@ -241,8 +241,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/90 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="w-full max-w-lg my-auto">
         {/* Progress dots */}
         <div className="mb-6 flex justify-center gap-1.5">
           {slides.map((_, i) => (
