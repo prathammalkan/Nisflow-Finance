@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -23,10 +23,12 @@ export default function SettingsPage() {
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [hasInitializedName, setHasInitializedName] = useState(false);
 
-  if (profile && !hasInitializedName) {
-    setDisplayNameInput(profile.displayName);
-    setHasInitializedName(true);
-  }
+  useEffect(() => {
+    if (profile && !hasInitializedName) {
+      setDisplayNameInput(profile.displayName || '');
+      setHasInitializedName(true);
+    }
+  }, [profile, hasInitializedName]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();

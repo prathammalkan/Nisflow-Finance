@@ -32,7 +32,7 @@ export default function SavingsGoalsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Savings Goals</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Savings Goals</h2>
           <p className="text-muted-foreground mt-1">
             Track and manage your savings goals.
           </p>

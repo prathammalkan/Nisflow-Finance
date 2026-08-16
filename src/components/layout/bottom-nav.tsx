@@ -7,15 +7,15 @@ import {
   LayoutDashboard,
   ArrowRightLeft,
   Users,
-  BarChart3,
+  Wallet,
   Settings,
 } from "lucide-react";
 
 const tabs = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Transactions", href: "/transactions", icon: ArrowRightLeft },
+  { name: "Accounts", href: "/accounts", icon: Wallet },
   { name: "People", href: "/people", icon: Users },
-  { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

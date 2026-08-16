@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sun, Moon, Menu, Plus, LogOut, Settings } from "lucide-react";
+import { Sun, Moon, Menu, Plus, LogOut, Settings, ArrowRightLeft } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -64,13 +64,13 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* + Transaction button */}
+        {/* + Transactions button */}
         <Link
           href="/transactions"
           className="hidden sm:inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 py-2 gap-2"
         >
-          <Plus size={16} />
-          Transaction
+          <ArrowRightLeft size={16} />
+          Transactions
         </Link>
 
         {/* Theme toggle */}
@@ -92,6 +92,7 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors"
             aria-label="User menu"
+            title={profile?.displayName || 'User menu'}
           >
             {initials}
           </button>
@@ -106,8 +107,8 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
               {/* Dropdown */}
               <div className="absolute right-0 top-10 z-20 w-48 rounded-lg border bg-popover shadow-lg py-1 text-sm">
                 <div className="px-3 py-2 border-b">
-                  <p className="font-medium text-foreground">NisFlow Finance</p>
-                  <p className="text-xs text-muted-foreground truncate">Personal Account</p>
+                  <p className="font-medium text-foreground truncate">{profile?.displayName || 'User'}</p>
+                  <p className="text-xs text-muted-foreground truncate">{profile?.email || ''}</p>
                 </div>
                 <Link
                   href="/settings"

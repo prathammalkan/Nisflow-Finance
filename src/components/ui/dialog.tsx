@@ -116,7 +116,7 @@ export const DialogContent = React.forwardRef<
     <dialog
       ref={dialogRef}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 backdrop:bg-black/80 backdrop:backdrop-blur-sm sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 backdrop:bg-black/80 backdrop:backdrop-blur-sm sm:rounded-lg animate-in fade-in-0 zoom-in-95",
         !ctx.open && "hidden",
         className
       )}

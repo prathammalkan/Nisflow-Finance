@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Header collapsed={collapsed} setIsMobileOpen={setIsMobileOpen} />
 
         {/* Extra bottom padding on mobile so content isn't hidden behind bottom nav */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto pb-20 md:pb-6 lg:pb-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto pb-24 md:pb-6 lg:pb-8">
           {children}
         </main>
       </div>
