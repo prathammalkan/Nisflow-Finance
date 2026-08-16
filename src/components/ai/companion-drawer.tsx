@@ -1,13 +1,18 @@
 "use client";
 
-import { useChat } from '@ai-sdk/react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sparkles, Send, Bot, User, Loader2, X, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 const SUGGESTIONS = [
   'How much did I spend this month?',
@@ -18,28 +23,105 @@ const SUGGESTIONS = [
 
 export function CompanionDrawer() {
   const [open, setOpen] = useState(false);
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = useChat() as any;
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
-  const handleSuggestion = (text: string) => {
-    // Directly submit the suggestion without needing to press send
-    const fakeEvent = { preventDefault: () => {} } as any;
-    handleInputChange({ target: { value: text } } as any);
-    // Use a short timeout to let state update, then submit
-    setTimeout(() => {
-      const form = document.getElementById('nisflow-ai-form') as HTMLFormElement | null;
-      if (form) form.requestSubmit();
-    }, 50);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  const sendMessage = async (textToSend: string) => {
+    const trimmed = textToSend.trim();
+    if (!trimmed || isLoading) return;
+
+    setError(null);
+    setInput('');
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: trimmed,
+    };
+
+    const assistantMessageId = `assistant-${Date.now()}`;
+    const newMessages = [...messages, userMessage];
+
+    // Optimistically show user message and empty assistant message
+    setMessages([
+      ...newMessages,
+      { id: assistantMessageId, role: 'assistant', content: '' },
+    ]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body received from server.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedContent += chunk;
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? { ...msg, content: accumulatedContent }
+              : msg
+          )
+        );
+      }
+    } catch (err: any) {
+      console.error('Chat error:', err);
+      setError(err?.message || 'Failed to get a response. Please try again.');
+      // Remove empty assistant message on failure
+      setMessages((prev) => prev.filter((msg) => msg.id !== assistantMessageId));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(input);
+  };
+
+  const handleSuggestion = (suggestionText: string) => {
+    sendMessage(suggestionText);
   };
 
   const handleClearChat = () => {
     setMessages([]);
+    setError(null);
   };
 
   return (
@@ -113,7 +195,7 @@ export function CompanionDrawer() {
                 </div>
               </div>
             ) : (
-              messages.map((m: any) => (
+              messages.map((m) => (
                 <div
                   key={m.id}
                   className={cn(
@@ -127,10 +209,11 @@ export function CompanionDrawer() {
                       m.role === 'user' ? 'flex-row-reverse' : 'flex-row'
                     )}
                   >
-                    {m.role === 'user'
-                      ? <User className="h-3 w-3" />
-                      : <Bot className="h-3 w-3" />
-                    }
+                    {m.role === 'user' ? (
+                      <User className="h-3 w-3" />
+                    ) : (
+                      <Bot className="h-3 w-3" />
+                    )}
                     {m.role === 'user' ? 'You' : 'NisFlow AI'}
                   </div>
                   <div
@@ -141,57 +224,36 @@ export function CompanionDrawer() {
                         : 'bg-muted text-foreground rounded-bl-sm'
                     )}
                   >
-                    {m.content && (
+                    {m.content ? (
                       <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-0 prose-p:leading-relaxed">
                         <ReactMarkdown>{m.content}</ReactMarkdown>
                       </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Thinking…
+                      </div>
                     )}
-                    {m.toolInvocations?.map((inv: any) => {
-                      if ('result' in inv) {
-                        return (
-                          <p key={inv.toolCallId} className="mt-1.5 text-[10px] opacity-60 flex items-center gap-1">
-                            ✓ Checked your {
-                              inv.toolName === 'getTransactions' ? 'transactions'
-                              : inv.toolName === 'getNetWorth' ? 'net worth'
-                              : inv.toolName === 'getAccounts' ? 'accounts'
-                              : inv.toolName === 'getSpendingSummary' ? 'spending summary'
-                              : inv.toolName
-                            }
-                          </p>
-                        );
-                      }
-                      return (
-                        <p key={inv.toolCallId} className="mt-1.5 text-[10px] opacity-60 flex items-center gap-1">
-                          <Loader2 className="h-2.5 w-2.5 animate-spin" /> Fetching data…
-                        </p>
-                      );
-                    })}
                   </div>
                 </div>
               ))
             )}
-            {isLoading && messages[messages.length - 1]?.role === 'user' && (
-              <div className="flex items-center gap-2 text-muted-foreground text-xs mr-auto">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Thinking…
+
+            {error && (
+              <div className="p-3 text-xs bg-destructive/10 text-destructive rounded-lg border border-destructive/20 text-center">
+                {error}
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
 
           {/* Input area */}
           <div className="p-3 border-t bg-background">
-            <form
-              id="nisflow-ai-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (input?.trim()) handleSubmit(e);
-              }}
-              className="flex items-center gap-2"
-            >
+            <form onSubmit={handleFormSubmit} className="flex items-center gap-2">
               <Input
-                value={input || ''}
-                onChange={handleInputChange}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about your finances…"
                 className="flex-1 h-9 text-sm"
                 disabled={isLoading}
@@ -201,9 +263,13 @@ export function CompanionDrawer() {
                 type="submit"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                disabled={isLoading || !input?.trim()}
+                disabled={isLoading || !input.trim()}
               >
-                <Send className="h-3.5 w-3.5" />
+                {isLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
               </Button>
             </form>
             <p className="text-[10px] text-muted-foreground text-center mt-2">

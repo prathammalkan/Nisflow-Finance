@@ -1,118 +1,121 @@
 import { google } from '@ai-sdk/google';
-import { streamText, tool } from 'ai';
-import { z } from 'zod';
+import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
+import Decimal from 'decimal.js';
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (!user) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+    if (authError || !user) {
+      return new Response('Unauthorized', { status: 401 });
+    }
 
-  const { messages } = await req.json();
+    const { messages } = await req.json();
+    if (!messages || !Array.isArray(messages)) {
+      return new Response('Invalid request body', { status: 400 });
+    }
 
-  const result = streamText({
-    model: google('gemini-2.0-flash'),
-    system: `You are NisFlow, a strictly finance-only AI assistant built into the NisFlow Finance app. 
+    // Fetch live user financial context
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-Your ONLY purpose is to help the user with their personal finances inside this app. You can:
-- Analyse their transactions, income, expenses, accounts, net worth, receivables, and payables
-- Give budgeting tips and savings advice based on their actual data
-- Summarise spending patterns and flag unusual activity
-- Answer questions about their financial data fetched from the tools
+    const [
+      { data: accounts },
+      { data: monthTransactions },
+      { data: recentTransactions },
+      { data: receivables },
+      { data: payables },
+    ] = await Promise.all([
+      supabase.from('accounts').select('name, type, balance, is_active').eq('user_id', user.id).eq('is_active', true),
+      supabase.from('transactions').select('amount, direction, type').eq('user_id', user.id).gte('date', startOfMonth),
+      supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
+      supabase.from('receivables').select('amount, received_amount, person_name, status').eq('user_id', user.id).neq('status', 'settled'),
+      supabase.from('payables').select('amount, paid_amount, person_name, status').eq('user_id', user.id).neq('status', 'settled'),
+    ]);
 
-You MUST REFUSE any question that is not related to the user's personal finance data or general personal finance concepts. If someone asks you anything off-topic (coding, general knowledge, creative writing, science, politics, entertainment, etc.), respond ONLY with:
+    // Calculate balances
+    let totalCash = new Decimal(0);
+    let totalInvestments = new Decimal(0);
+    const accountsList = (accounts || []).map((acc: any) => {
+      const bal = new Decimal(acc.balance || 0);
+      if (acc.type === 'investment') totalInvestments = totalInvestments.plus(bal);
+      else totalCash = totalCash.plus(bal);
+      return `- ${acc.name} (${acc.type}): ₹${bal.toFixed(2)}`;
+    }).join('\n') || 'No active accounts found.';
+
+    // Calculate this month spending & income
+    let monthIncome = new Decimal(0);
+    let monthExpenses = new Decimal(0);
+    (monthTransactions || []).forEach((tx: any) => {
+      const amt = new Decimal(tx.amount || 0);
+      if (tx.direction === 'in') monthIncome = monthIncome.plus(amt);
+      else if (tx.direction === 'out') monthExpenses = monthExpenses.plus(amt);
+    });
+
+    // Calculate outstanding receivables and payables
+    let totalReceivables = new Decimal(0);
+    (receivables || []).forEach((r: any) => {
+      const rem = new Decimal(r.amount || 0).minus(r.received_amount || 0);
+      if (rem.greaterThan(0)) totalReceivables = totalReceivables.plus(rem);
+    });
+
+    let totalPayables = new Decimal(0);
+    (payables || []).forEach((p: any) => {
+      const rem = new Decimal(p.amount || 0).minus(p.paid_amount || 0);
+      if (rem.greaterThan(0)) totalPayables = totalPayables.plus(rem);
+    });
+
+    const netWorth = totalCash.plus(totalInvestments).plus(totalReceivables).minus(totalPayables);
+
+    const recentTxList = (recentTransactions || []).map((tx: any) => 
+      `- ${tx.date?.substring(0, 10)}: ${tx.direction === 'in' ? '+' : '-'}₹${tx.amount} (${tx.type || 'transaction'}) "${tx.description || 'No description'}"`
+    ).join('\n') || 'No recent transactions recorded.';
+
+    const systemPrompt = `You are NisFlow, a strictly finance-only AI companion built into the NisFlow Finance app.
+
+Your ONLY purpose is to help the user understand and manage their personal finances inside this app.
+
+CURRENT USER LIVE FINANCIAL DATA (Real-time from database):
+- Current Month: ${now.toLocaleString('default', { month: 'long', year: 'numeric' })}
+- Total Net Worth: ₹${netWorth.toFixed(2)}
+- Available Liquid Cash: ₹${totalCash.toFixed(2)}
+- Total Investments: ₹${totalInvestments.toFixed(2)}
+- This Month Income: ₹${monthIncome.toFixed(2)}
+- This Month Expenses: ₹${monthExpenses.toFixed(2)}
+- Net Monthly Cashflow: ₹${monthIncome.minus(monthExpenses).toFixed(2)}
+- Total Receivables (Money owed to user): ₹${totalReceivables.toFixed(2)}
+- Total Payables (Money user owes): ₹${totalPayables.toFixed(2)}
+
+User Accounts:
+${accountsList}
+
+Recent Transactions:
+${recentTxList}
+
+STRICT SCOPE AND BEHAVIOR RULES:
+1. You MUST REFUSE any question that is not related to personal finance or the user's NisFlow financial data. If the user asks about coding, creative writing, science, general trivia, entertainment, weather, or anything unrelated to personal finance, respond ONLY with:
 "I'm a finance-only assistant. I can only help you with your accounts, transactions, budgets, and financial data inside NisFlow."
+2. Always format currency amounts in Indian Rupees with the ₹ symbol (e.g. ₹12,500.00).
+3. Use the live data provided above to give direct, accurate, and concise answers to the user's questions.
+4. Keep your answers brief, professional, and directly actionable. Avoid unnecessary disclaimers or filler text.`;
 
-Rules:
-- Always fetch data using tools before answering questions about the user's finances
-- Format all currency in INR using the ₹ symbol
-- Be concise and professional — no filler words, no emojis
-- Never invent numbers — only use data returned by tools
-- Never answer questions outside personal finance`,
-    messages,
-    tools: {
-      getTransactions: tool({
-        description: 'Fetch the user\'s transactions, optionally filtered by month and year.',
-        parameters: z.object({
-          month: z.number().optional().describe('Month (1-12)'),
-          year: z.number().optional().describe('Year (e.g. 2026)'),
-          limit: z.number().optional().describe('Max transactions to return (default 50)'),
-        }),
-        execute: async ({ month, year, limit = 50 }: { month?: number; year?: number; limit?: number }) => {
-          let query = supabase
-            .from('transactions')
-            .select('id, date, amount, direction, description, categories!transactions_category_id_fkey(name)')
-            .eq('user_id', user.id)
-            .order('date', { ascending: false })
-            .limit(limit);
+    const result = streamText({
+      model: google('gemini-2.0-flash'),
+      system: systemPrompt,
+      messages: messages.map((m: any) => ({
+        role: m.role,
+        content: m.content || '',
+      })),
+    });
 
-          if (month && year) {
-            const startDate = new Date(year, month - 1, 1).toISOString();
-            const endDate = new Date(year, month, 0).toISOString();
-            query = query.gte('date', startDate).lte('date', endDate);
-          }
-
-          const { data, error } = await query;
-          if (error) return { error: error.message };
-          return data as any[];
-        },
-      } as any),
-      getNetWorth: tool({
-        description: 'Fetch the user\'s current net worth, personal cash, and investments.',
-        parameters: z.object({}),
-        execute: async (_args: {}) => {
-          const { data, error } = await supabase
-            .from('net_worth_history')
-            .select('total_net_worth, personal_cash, investments, date')
-            .eq('user_id', user.id)
-            .order('date', { ascending: false })
-            .limit(1);
-            
-          if (error) return { error: error.message };
-          return data?.[0] || { message: 'No net worth data available yet' };
-        },
-      } as any),
-      getAccounts: tool({
-        description: 'Fetch the user\'s accounts and their current balances.',
-        parameters: z.object({}),
-        execute: async (_args: {}) => {
-          const { data, error } = await supabase
-            .from('accounts')
-            .select('name, type, balance')
-            .eq('user_id', user.id)
-            .eq('is_active', true);
-            
-          if (error) return { error: error.message };
-          return data as any[];
-        },
-      } as any),
-      getSpendingSummary: tool({
-        description: "Get a summary of the user's income, expenses, and net spending for the current month.",
-        parameters: z.object({}),
-        execute: async (_args: {}) => {
-          const now = new Date();
-          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-          const { data, error } = await supabase
-            .from('transactions')
-            .select('amount, direction, type')
-            .eq('user_id', user.id)
-            .gte('date', startOfMonth);
-
-          if (error) return { error: error.message };
-
-          let income = 0, expenses = 0;
-          (data || []).forEach((tx: any) => {
-            if (tx.direction === 'in') income += Number(tx.amount);
-            else if (tx.direction === 'out') expenses += Number(tx.amount);
-          });
-          return { income, expenses, net: income - expenses, month: now.toLocaleString('default', { month: 'long', year: 'numeric' }) };
-        },
-      } as any),
-    },
-  });
-
-  return result.toTextStreamResponse();
+    return result.toTextStreamResponse();
+  } catch (error: any) {
+    console.error('Chat API Error:', error);
+    return new Response(JSON.stringify({ error: error?.message || 'Internal server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }
