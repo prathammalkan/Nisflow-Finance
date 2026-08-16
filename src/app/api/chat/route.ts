@@ -3,6 +3,20 @@ import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
 import Decimal from 'decimal.js';
 
+// Simple in-memory rate limiter: 20 requests per user per minute
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(userId: string, maxReqs = 20, windowMs = 60_000): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(userId);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(userId, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= maxReqs) return false;
+  entry.count++;
+  return true;
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = await createClient();
@@ -10,6 +24,14 @@ export async function POST(req: Request) {
 
     if (authError || !user) {
       return new Response('Unauthorized', { status: 401 });
+    }
+
+    // Rate limit: 20 AI requests per user per minute
+    if (!checkRateLimit(user.id)) {
+      return new Response(JSON.stringify({ error: 'Too many requests. Please wait a moment before asking again.' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
+      });
     }
 
     const { messages } = await req.json();
