@@ -17,6 +17,7 @@ import { useAccounts } from '@/lib/hooks/use-accounts';
 import { Sparkles, Loader2 } from 'lucide-react';
 import Decimal from 'decimal.js';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 const formSchema = z.object({
   type: z.enum(['Expense', 'Income', 'Transfer']),
@@ -67,7 +68,7 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
       type: 'Expense',
       amount: '',
       account_id: '',
-      date: format(new Date(), "yyyy-MM-dd'T'HH:mm:ss"),
+      date: format(new Date(), 'yyyy-MM-dd'),
       ownership: 'personal',
       status: 'confirmed'
     }
@@ -109,7 +110,7 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           type: 'Transfer',
           direction: 'out',
           account_id: values.account_id,
-          date: values.date,
+          date: new Date(values.date).toISOString(),
           description: values.description || 'Transfer out',
           ownership: values.ownership || 'personal',
           status: values.status
@@ -120,7 +121,7 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           type: 'Transfer',
           direction: 'in',
           account_id: values.to_account_id,
-          date: values.date,
+          date: new Date(values.date).toISOString(),
           description: values.description || 'Transfer in',
           ownership: values.ownership || 'personal',
           status: values.status,
@@ -138,17 +139,19 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           account_id: values.account_id,
           category_id: values.category_id,
           description: values.description,
-          date: values.date,
+          date: new Date(values.date).toISOString(),
           ownership: values.ownership || 'personal',
           status: values.status,
           notes: values.notes,
           counterparty_id: values.counterparty_id
         });
       }
+      toast.success('Transaction saved');
       onOpenChange(false);
       form.reset();
     } catch (e) {
       console.error(e);
+      toast.error('Failed to save transaction');
     }
   };
 
@@ -259,6 +262,11 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
               <Input placeholder="What was this for?" {...form.register('description')} />
             </div>
 
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Date</label>
+              <Input type="date" {...form.register('date')} />
+            </div>
+
             {!isAdvanced ? (
               <Button 
                 type="button" 
@@ -271,10 +279,6 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
             ) : (
               <div className="space-y-4 pt-4 border-t">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Date</label>
-                    <Input type="datetime-local" {...form.register('date')} />
-                  </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Ownership</label>
                     <Select 

@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import { useCreateAccount, useUpdateAccount } from '@/lib/hooks/use-accounts';
 import type { Database } from '@/types/database';
 import { Decimal } from 'decimal.js';
+import { toast } from 'sonner';
 
 type Account = Database['public']['Tables']['accounts']['Row'];
 
@@ -112,9 +113,11 @@ export function AccountForm({ open, onOpenChange, account }: AccountFormProps) {
           is_active: true,
         } as any);
       }
+      toast.success(isEditing ? 'Account updated' : 'Account created');
       onOpenChange(false);
     } catch (error) {
       console.error(error);
+      toast.error('Failed to save account');
     }
   };
 
