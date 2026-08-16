@@ -7,8 +7,11 @@ import NextTopLoader from "nextjs-toploader";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "NisFlow Finance",
-  description: "Your professional AI financial companion.",
+  title: {
+    default: "NisFlow Finance",
+    template: "%s | NisFlow",
+  },
+  description: "Your personal AI-powered finance companion. Track accounts, transactions, savings and investments.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -22,11 +25,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#09090b",
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
+  ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({

@@ -34,14 +34,14 @@ export default function SpendingPage() {
 
   // Largest transactions this month (expenses only)
   const largestTransactions = recentTransactions
-    ?.filter(tx => tx.type === 'expense')
+    ?.filter(tx => tx.direction === 'out')
     .sort((a, b) => Number(b.amount) - Number(a.amount))
     .slice(0, 5) || [];
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Spending Analysis</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Spending Analysis</h2>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

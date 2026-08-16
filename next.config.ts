@@ -37,7 +37,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://qyjhicibrciqcznsdevk.supabase.co",
-      "connect-src 'self' https://qyjhicibrciqcznsdevk.supabase.co wss://qyjhicibrciqcznsdevk.supabase.co",
+      "connect-src 'self' https://qyjhicibrciqcznsdevk.supabase.co wss://qyjhicibrciqcznsdevk.supabase.co https://generativelanguage.googleapis.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

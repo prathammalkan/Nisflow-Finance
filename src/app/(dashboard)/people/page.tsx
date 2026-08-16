@@ -30,22 +30,22 @@ export default function PeoplePage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight">People & Counterparties</h1>
+        <h2 className="text-2xl font-bold tracking-tight">People & Counterparties</h2>
         <PersonForm />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        <div className="p-4 bg-green-50 border border-green-100 rounded-lg">
-          <div className="text-sm text-green-600 font-medium">Total Receivable</div>
-          <div className="text-2xl font-bold text-green-700">{formatINR(totals.receivable.toNumber())}</div>
+        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+          <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Total Receivable</div>
+          <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatINR(totals.receivable.toNumber())}</div>
         </div>
-        <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
-          <div className="text-sm text-red-600 font-medium">Total Payable</div>
-          <div className="text-2xl font-bold text-red-700">{formatINR(totals.payable.toNumber())}</div>
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <div className="text-sm text-red-600 dark:text-red-400 font-medium">Total Payable</div>
+          <div className="text-2xl font-bold text-red-700 dark:text-red-300">{formatINR(totals.payable.toNumber())}</div>
         </div>
-        <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
-          <div className="text-sm text-blue-600 font-medium">Net Position</div>
-          <div className="text-2xl font-bold text-blue-700">{formatINR(netPosition.toNumber())}</div>
+        <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="text-sm text-primary font-medium">Net Position</div>
+          <div className="text-2xl font-bold text-primary">{formatINR(netPosition.toNumber())}</div>
         </div>
       </div>
 

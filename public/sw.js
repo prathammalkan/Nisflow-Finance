@@ -1,7 +1,5 @@
-const CACHE_NAME = 'nisflow-v1';
+const CACHE_NAME = 'nisflow-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/dashboard',
   '/manifest.webmanifest',
   '/1l.png',
   '/icon.svg',
