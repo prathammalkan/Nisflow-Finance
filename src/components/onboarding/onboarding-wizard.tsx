@@ -1,8 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  Smartphone,
+  Download,
+  Share2,
+  MoreVertical,
+  PlusSquare,
   Building2,
   Wallet,
   ArrowRightLeft,
@@ -19,29 +24,47 @@ import {
   Receipt,
   FileText,
   Banknote,
+  Sparkles,
+  Laptop,
 } from 'lucide-react';
 import { AccountForm } from '@/components/accounts/account-form';
 import { useAccounts } from '@/lib/hooks/use-accounts';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface OnboardingWizardProps {
   onComplete?: () => void;
 }
 
+interface FeatureItem {
+  icon: React.ElementType;
+  text: string;
+}
+
 interface Slide {
+  type?: 'install' | 'feature';
   icon: React.ElementType;
   iconColor: string;
   iconBg: string;
   title: string;
   subtitle: string;
-  features: { icon: React.ElementType; text: string }[];
+  features?: FeatureItem[];
 }
 
 const slides: Slide[] = [
   {
+    type: 'install',
+    icon: Smartphone,
+    iconColor: 'text-primary',
+    iconBg: 'bg-primary/10',
+    title: 'Install NisFlow on Your Mobile',
+    subtitle: 'NisFlow is an installable PWA designed for lightning-fast mobile performance with full offline support and instant launch.',
+  },
+  {
+    type: 'feature',
     icon: Building2,
-    iconColor: 'text-emerald-600',
-    iconBg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    iconBg: 'bg-emerald-500/10',
     title: 'Welcome to NisFlow Finance',
     subtitle:
       'Your complete personal finance command center. Built on one principle: Where did the money come from, who owns it, why did it move, and can you prove it?',
@@ -52,9 +75,10 @@ const slides: Slide[] = [
     ],
   },
   {
+    type: 'feature',
     icon: Wallet,
-    iconColor: 'text-blue-600',
-    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    iconBg: 'bg-blue-500/10',
     title: 'Accounts & Balances',
     subtitle:
       'Track every bank account, wallet, cash pocket, and investment account in one place. All balances update automatically as you record transactions.',
@@ -65,9 +89,10 @@ const slides: Slide[] = [
     ],
   },
   {
+    type: 'feature',
     icon: ArrowRightLeft,
-    iconColor: 'text-violet-600',
-    iconBg: 'bg-violet-50',
+    iconColor: 'text-violet-600 dark:text-violet-400',
+    iconBg: 'bg-violet-500/10',
     title: 'Transactions & Ledger',
     subtitle:
       'Log every rupee in and out. Income, expenses, transfers, and third-party funds. Every transaction has a clear source, destination, and reason.',
@@ -78,9 +103,10 @@ const slides: Slide[] = [
     ],
   },
   {
+    type: 'feature',
     icon: Users,
-    iconColor: 'text-amber-600',
-    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    iconBg: 'bg-amber-500/10',
     title: 'People — Receivables & Payables',
     subtitle:
       'Know exactly who owes you money and whom you owe. Track partial repayments, set due dates, and get reminders automatically.',
@@ -91,9 +117,10 @@ const slides: Slide[] = [
     ],
   },
   {
+    type: 'feature',
     icon: TrendingUp,
-    iconColor: 'text-indigo-600',
-    iconBg: 'bg-indigo-50',
+    iconColor: 'text-indigo-600 dark:text-indigo-400',
+    iconBg: 'bg-indigo-500/10',
     title: 'IPOs & Investments',
     subtitle:
       'Track your investment portfolio from application to listing. Record every IPO you applied for and monitor mutual funds, stocks, and FDs.',
@@ -104,9 +131,10 @@ const slides: Slide[] = [
     ],
   },
   {
+    type: 'feature',
     icon: Target,
-    iconColor: 'text-rose-600',
-    iconBg: 'bg-rose-50',
+    iconColor: 'text-rose-600 dark:text-rose-400',
+    iconBg: 'bg-rose-500/10',
     title: 'Budgets & Savings Goals',
     subtitle:
       'Set monthly budgets per category and measure your savings progress. Know if you are on track before the month ends.',
@@ -117,28 +145,16 @@ const slides: Slide[] = [
     ],
   },
   {
-    icon: BarChart3,
-    iconColor: 'text-teal-600',
-    iconBg: 'bg-teal-50',
-    title: 'Reports & Tax Records',
-    subtitle:
-      'Generate financial reports in seconds. Export to CSV or PDF. Maintain tax records year-wise for every financial year with deductions and capital gains.',
-    features: [
-      { icon: BarChart3, text: '7 report types — personal finance, spending, IPO, investment, tax' },
-      { icon: Receipt, text: 'Tax records — income, deductions, capital gains per financial year' },
-      { icon: FileText, text: 'One-click PDF statements for any person or period' },
-    ],
-  },
-  {
+    type: 'feature',
     icon: Shield,
-    iconColor: 'text-gray-700',
-    iconBg: 'bg-gray-100',
-    title: 'Security & Privacy',
+    iconColor: 'text-primary',
+    iconBg: 'bg-primary/10',
+    title: 'Security & Biometrics',
     subtitle:
-      'Your financial data belongs only to you. Every piece of data is isolated by your user ID at the database level. Biometric lock adds a second layer.',
+      'Your financial data belongs only to you. Every piece of data is isolated by your user ID at the database level with biometric device protection.',
     features: [
       { icon: Shield, text: 'Row-level security — no one can read your data, ever' },
-      { icon: CheckCircle2, text: 'Biometric app lock — fingerprint or Face ID on supported devices' },
+      { icon: CheckCircle2, text: 'Biometric app lock — fingerprint or Face ID' },
       { icon: FileText, text: 'Full data export — download everything as JSON or SQL anytime' },
     ],
   },
@@ -147,9 +163,47 @@ const slides: Slide[] = [
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [slideIndex, setSlideIndex] = useState(0);
   const [showAccountForm, setShowAccountForm] = useState(false);
-  const [done, setDone] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<'android' | 'ios' | 'desktop'>('android');
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
   const router = useRouter();
   const { data: accounts } = useAccounts();
+
+  useEffect(() => {
+    // Detect iOS vs Android
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(userAgent)) {
+      setSelectedPlatform('ios');
+    } else if (/android/.test(userAgent)) {
+      setSelectedPlatform('android');
+    } else {
+      setSelectedPlatform('desktop');
+    }
+
+    // Capture PWA install event on supported browsers
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        toast.success('NisFlow Finance installed successfully!');
+        setIsInstallable(false);
+      }
+      setDeferredPrompt(null);
+    }
+  };
 
   const isTourComplete = slideIndex >= slides.length;
   const currentSlide = slides[slideIndex];
@@ -170,47 +224,51 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   };
 
   // Setup slide (after tour)
-  if (isTourComplete && !done) {
+  if (isTourComplete) {
     return (
-      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/90 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
         <div className="w-full max-w-lg my-auto">
           {/* Progress */}
           <div className="mb-6 flex justify-center gap-1.5">
             {slides.map((_, i) => (
               <div key={i} className="h-1.5 w-8 rounded-full bg-primary" />
             ))}
-            <div className="h-1.5 w-8 rounded-full bg-primary/30" />
+            <div className="h-1.5 w-8 rounded-full bg-primary" />
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-br from-emerald-50 to-blue-50 px-8 py-10 text-center">
-              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-md">
-                <Wallet className="h-10 w-10 text-emerald-600" />
+          <div className="bg-card text-card-foreground rounded-2xl border shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-br from-primary/10 via-background to-primary/5 px-8 py-10 text-center border-b">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 shadow-sm">
+                <Wallet className="h-8 w-8 text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Add your first account</h2>
-              <p className="mt-2 text-gray-600 text-sm leading-relaxed max-w-sm mx-auto">
-                To start tracking your finances, add at least one bank account or wallet. This will be your financial baseline.
+              <h2 className="text-2xl font-bold">Add your first account</h2>
+              <p className="mt-2 text-muted-foreground text-sm leading-relaxed max-w-sm mx-auto">
+                To start tracking your finances, add at least one bank account or cash wallet as your financial baseline.
               </p>
             </div>
 
             <div className="p-6">
               {accounts && accounts.length > 0 ? (
                 <div className="space-y-2 mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-3">Accounts added:</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                    Accounts Added ({accounts.length}):
+                  </p>
                   {accounts.map((acc: any) => (
-                    <div key={acc.id} className="flex justify-between items-center bg-gray-50 rounded-lg px-4 py-2.5 border border-gray-100">
-                      <span className="text-sm font-medium text-gray-900">{acc.name}</span>
-                      <span className="text-sm text-gray-500">₹{acc.balance}</span>
+                    <div key={acc.id} className="flex justify-between items-center bg-muted/60 rounded-xl px-4 py-3 border">
+                      <span className="text-sm font-medium">{acc.name}</span>
+                      <span className="text-sm font-semibold text-primary">₹{acc.balance}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400 text-sm mb-4">No accounts added yet.</div>
+                <div className="text-center py-6 text-muted-foreground text-sm mb-4">
+                  No accounts added yet. Click below to add one.
+                </div>
               )}
 
               <button
                 onClick={() => setShowAccountForm(true)}
-                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 hover:border-primary hover:text-primary text-gray-500 rounded-xl py-3 text-sm font-medium transition-colors"
+                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-border hover:border-primary hover:text-primary rounded-xl py-3.5 text-sm font-medium transition-colors"
               >
                 <span className="text-lg leading-none">+</span>
                 Add an Account
@@ -220,14 +278,13 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             <div className="px-6 pb-6 flex gap-3">
               <button
                 onClick={prev}
-                className="flex items-center gap-1.5 px-4 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl text-sm font-medium transition-colors"
               >
                 <ChevronLeft size={16} /> Back
               </button>
               <button
-                disabled={!accounts || accounts.length === 0}
                 onClick={finish}
-                className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-3 text-sm font-semibold transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-3 text-sm font-semibold shadow transition-colors"
               >
                 <CheckCircle2 size={18} />
                 Go to Dashboard
@@ -241,7 +298,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/90 backdrop-blur-sm p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
       <div className="w-full max-w-lg my-auto">
         {/* Progress dots */}
         <div className="mb-6 flex justify-center gap-1.5">
@@ -254,60 +311,204 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   ? 'w-8 bg-primary'
                   : i === slideIndex
                   ? 'w-10 bg-primary'
-                  : 'w-8 bg-gray-200'
+                  : 'w-8 bg-muted'
               )}
             />
           ))}
           {/* Setup step dot */}
-          <div className="h-1.5 w-8 rounded-full bg-gray-200" />
+          <div className="h-1.5 w-8 rounded-full bg-muted" />
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-2xl border shadow-2xl overflow-hidden">
           {/* Icon + Header */}
-          <div className="px-8 pt-10 pb-6 text-center">
+          <div className="px-8 pt-8 pb-4 text-center">
             <div
               className={cn(
-                'mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl',
+                'mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border',
                 currentSlide.iconBg
               )}
             >
-              <currentSlide.icon className={cn('h-10 w-10', currentSlide.iconColor)} />
+              <currentSlide.icon className={cn('h-8 w-8', currentSlide.iconColor)} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 leading-snug">{currentSlide.title}</h2>
-            <p className="mt-3 text-gray-500 text-sm leading-relaxed max-w-sm mx-auto">
+            <h2 className="text-xl font-bold leading-snug">{currentSlide.title}</h2>
+            <p className="mt-2 text-muted-foreground text-xs sm:text-sm leading-relaxed max-w-md mx-auto">
               {currentSlide.subtitle}
             </p>
           </div>
 
-          {/* Features list */}
-          <div className="px-8 pb-8 space-y-3">
-            {currentSlide.features.map(({ icon: Icon, text }, i) => (
-              <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200">
-                  <Icon className="h-3.5 w-3.5 text-gray-600" />
+          {/* Slide Content */}
+          <div className="px-6 pb-6">
+            {currentSlide.type === 'install' ? (
+              <div className="space-y-4">
+                {/* Platform tabs */}
+                <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-xl">
+                  <button
+                    onClick={() => setSelectedPlatform('android')}
+                    className={cn(
+                      'py-1.5 text-xs font-semibold rounded-lg transition-all',
+                      selectedPlatform === 'android'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    Android
+                  </button>
+                  <button
+                    onClick={() => setSelectedPlatform('ios')}
+                    className={cn(
+                      'py-1.5 text-xs font-semibold rounded-lg transition-all',
+                      selectedPlatform === 'ios'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    iPhone (iOS)
+                  </button>
+                  <button
+                    onClick={() => setSelectedPlatform('desktop')}
+                    className={cn(
+                      'py-1.5 text-xs font-semibold rounded-lg transition-all',
+                      selectedPlatform === 'desktop'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    Desktop
+                  </button>
                 </div>
-                <p className="text-sm text-gray-700 leading-snug">{text}</p>
+
+                {/* Platform specific instructions */}
+                {selectedPlatform === 'android' && (
+                  <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        1
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Open in <strong>Chrome</strong> browser on your Android device.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        2
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Tap the <MoreVertical className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> (three dots) menu in the top-right corner.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        3
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Tap <strong>&ldquo;Install app&rdquo;</strong> or <strong>&ldquo;Add to Home screen&rdquo;</strong>.
+                      </p>
+                    </div>
+                    {isInstallable && (
+                      <button
+                        onClick={handleInstallClick}
+                        className="w-full mt-2 flex items-center justify-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xl py-2.5 text-xs font-semibold transition-colors"
+                      >
+                        <Download className="h-4 w-4" /> Tap to Install Now
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {selectedPlatform === 'ios' && (
+                  <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        1
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Open in <strong>Safari</strong> browser on your iPhone or iPad.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        2
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Tap the <Share2 className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> (Share) icon at the bottom of the screen.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        3
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Scroll down and tap <PlusSquare className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> <strong>&ldquo;Add to Home Screen&rdquo;</strong>, then tap <strong>Add</strong>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedPlatform === 'desktop' && (
+                  <div className="space-y-2.5 bg-muted/40 p-4 rounded-xl border">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        1
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Click the <Download className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> <strong>Install</strong> icon in the browser address bar.
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs">
+                        2
+                      </div>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        Click <strong>Install</strong> to run NisFlow in a clean, standalone desktop window.
+                      </p>
+                    </div>
+                    {isInstallable && (
+                      <button
+                        onClick={handleInstallClick}
+                        className="w-full mt-2 flex items-center justify-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xl py-2.5 text-xs font-semibold transition-colors"
+                      >
+                        <Laptop className="h-4 w-4" /> Install Desktop App
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-primary/5 border border-primary/15 rounded-xl px-3 py-2">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                  <span>Runs full-screen with biometric lock, instant launch, and offline ledger support.</span>
+                </div>
               </div>
-            ))}
+            ) : (
+              <div className="space-y-2.5">
+                {currentSlide.features?.map(({ icon: Icon, text }, i) => (
+                  <div key={i} className="flex items-start gap-3 bg-muted/40 rounded-xl px-4 py-3 border">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-background border shadow-2xs">
+                      <Icon className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <p className="text-xs sm:text-sm leading-snug">{text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Navigation */}
-          <div className="px-8 pb-8 flex items-center justify-between gap-3">
+          <div className="px-6 pb-6 flex items-center justify-between gap-3 border-t pt-4">
             <button
               onClick={prev}
               disabled={slideIndex === 0}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-0 disabled:pointer-events-none rounded-lg text-sm font-medium transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-0 disabled:pointer-events-none rounded-xl text-sm font-medium transition-all"
             >
               <ChevronLeft size={16} /> Previous
             </button>
 
-            <div className="text-xs text-gray-400 font-medium">
+            <div className="text-xs text-muted-foreground font-medium">
               {slideIndex + 1} of {totalTourSlides}
             </div>
 
             <button
               onClick={next}
-              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground px-4 sm:px-5 py-2 rounded-xl text-sm font-semibold shadow transition-colors"
             >
               {slideIndex === totalTourSlides - 1 ? (
                 <>Set Up Account <CheckCircle2 size={15} /></>
@@ -318,11 +519,12 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           </div>
         </div>
 
-        {/* Small note at bottom */}
-        <p className="text-center text-xs text-gray-400 mt-4">
-          NisFlow Finance · Your data never leaves your account
+        {/* Small footer */}
+        <p className="text-center text-xs text-muted-foreground mt-4">
+          NisFlow Finance · Installable PWA · Bank-grade data privacy
         </p>
       </div>
     </div>
   );
 }
+

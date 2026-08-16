@@ -11,7 +11,7 @@ import { exportFullUserBackupJSON, exportFullUserBackupSQL } from '@/lib/export-
 import { useBiometricLock } from '@/lib/hooks/use-biometric-lock';
 import { useWebNotifications } from '@/lib/hooks/use-web-notifications';
 import { useProfile, useUpdateProfile } from '@/lib/hooks/use-profile';
-import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2 } from 'lucide-react';
+import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2, Smartphone, Share2, MoreVertical, PlusSquare, Laptop } from 'lucide-react';
 
 export default function SettingsPage() {
   const currentDate = new Date();
@@ -159,6 +159,47 @@ export default function SettingsPage() {
             </Button>
           </form>
         )}
+      </section>
+
+      {/* 1. Mobile App (PWA) Installation Guide */}
+      <section className="bg-card text-card-foreground p-6 rounded-xl border shadow-sm space-y-4">
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <Smartphone className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold">Mobile App Installation (PWA)</h2>
+            <p className="text-sm text-muted-foreground">Run NisFlow as a native app on your phone with instant launch and biometric lock.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          {/* Android Guide */}
+          <div className="border rounded-xl p-4 space-y-3 bg-muted/30">
+            <div className="flex items-center gap-2 font-semibold text-sm">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold">A</span>
+              Android (Chrome)
+            </div>
+            <ol className="space-y-2 text-xs text-muted-foreground list-decimal list-inside leading-relaxed">
+              <li>Open NisFlow in <strong>Chrome</strong> on your phone.</li>
+              <li>Tap the <MoreVertical className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> (three dots) menu in the top-right.</li>
+              <li>Tap <strong>&ldquo;Install app&rdquo;</strong> or <strong>&ldquo;Add to Home screen&rdquo;</strong>.</li>
+            </ol>
+          </div>
+
+          {/* iOS Guide */}
+          <div className="border rounded-xl p-4 space-y-3 bg-muted/30">
+            <div className="flex items-center gap-2 font-semibold text-sm">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold">i</span>
+              iPhone & iPad (Safari)
+            </div>
+            <ol className="space-y-2 text-xs text-muted-foreground list-decimal list-inside leading-relaxed">
+              <li>Open NisFlow in <strong>Safari</strong> on your iPhone.</li>
+              <li>Tap the <Share2 className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> (Share) icon at the bottom bar.</li>
+              <li>Scroll down and tap <PlusSquare className="inline h-3.5 w-3.5 mx-0.5 text-foreground" /> <strong>&ldquo;Add to Home Screen&rdquo;</strong>, then tap <strong>Add</strong>.</li>
+            </ol>
+          </div>
+        </div>
       </section>
 
       {/* 1. Offline Backups & Data Export */}
