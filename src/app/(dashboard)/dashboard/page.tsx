@@ -16,6 +16,7 @@ import { useSaveNetWorthSnapshot } from '@/lib/hooks/use-net-worth-history';
 import { NetWorthChart } from '@/components/dashboard/net-worth-chart';
 import { AiInsightCard } from '@/components/dashboard/ai-insight-card';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -53,12 +54,26 @@ export default function DashboardPage() {
   }, [stats, statsLoading, saveSnapshot]);
 
 
+  // Cross-device onboarding: check localStorage first (fast), then Supabase user_metadata (new device)
   useEffect(() => {
-    try {
-      if (typeof window !== 'undefined' && localStorage.getItem('nisflow_onboarding_completed') === 'true') {
-        setOnboardingDismissed(true);
-      }
-    } catch (e) {}
+    const checkOnboarding = async () => {
+      try {
+        // Fast path: same device already completed
+        if (typeof window !== 'undefined' && localStorage.getItem('nisflow_onboarding_completed') === 'true') {
+          setOnboardingDismissed(true);
+          return;
+        }
+        // Cross-device path: check Supabase auth metadata (no extra DB table)
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.user_metadata?.onboarding_completed === true) {
+          // Cache locally so next visit is instant
+          try { localStorage.setItem('nisflow_onboarding_completed', 'true'); } catch (_) {}
+          setOnboardingDismissed(true);
+        }
+      } catch (_) {}
+    };
+    checkOnboarding();
   }, []);
 
   const greeting = () => {
@@ -68,7 +83,8 @@ export default function DashboardPage() {
     return 'Good evening';
   };
 
-  const needsOnboarding = !statsLoading && (stats?.totalAccounts || 0) === 0 && !onboardingDismissed;
+  // Show onboarding to any user who hasn't completed it (cross-device, per account)
+  const needsOnboarding = !statsLoading && !onboardingDismissed;
 
   return (
     <>

@@ -50,7 +50,7 @@ export default function AccountsPage() {
           <Switch 
             id="show-inactive" 
             checked={showInactive} 
-            onChange={(e: any) => setShowInactive(e.target.checked)} 
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShowInactive(e.target.checked)}
           />
           <Label htmlFor="show-inactive">Show inactive accounts</Label>
         </div>

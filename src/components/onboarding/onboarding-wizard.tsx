@@ -31,6 +31,7 @@ import { AccountForm } from '@/components/accounts/account-form';
 import { useAccounts } from '@/lib/hooks/use-accounts';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
 
 interface OnboardingWizardProps {
   onComplete?: () => void;
@@ -212,10 +213,14 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const next = () => setSlideIndex((i) => Math.min(i + 1, totalTourSlides));
   const prev = () => setSlideIndex((i) => Math.max(i - 1, 0));
 
-  const finish = () => {
+  const finish = async () => {
+    // Persist cross-device in Supabase user_metadata (no extra table, zero cost)
     try {
-      localStorage.setItem('nisflow_onboarding_completed', 'true');
+      const supabase = createClient();
+      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
     } catch (_) {}
+    // Also cache locally so same device skips the extra auth call
+    try { localStorage.setItem('nisflow_onboarding_completed', 'true'); } catch (_) {}
     if (onComplete) {
       onComplete();
     } else {

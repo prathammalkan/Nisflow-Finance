@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { formatINR } from "@/lib/finance/money";
 import { useSavingsGoals } from "@/lib/hooks/use-savings-goals";
-
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { PageHeader } from "@/components/ui/page-header";
 import { SavingsGoalForm } from "@/components/savings/savings-goal-form";
 import { PlusCircle, Target, TrendingUp, Calendar, AlertCircle } from "lucide-react";
 
@@ -30,18 +30,16 @@ export default function SavingsGoalsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Savings Goals</h2>
-          <p className="text-muted-foreground mt-1">
-            Track and manage your savings goals.
-          </p>
-        </div>
-        <Button onClick={handleCreate}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          New Goal
-        </Button>
-      </div>
+      <PageHeader
+        title="Savings Goals"
+        description="Track your progress toward financial milestones."
+        actions={
+          <Button onClick={handleCreate}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            New Goal
+          </Button>
+        }
+      />
 
       {!isLoading && goals && goals.length > 0 && (
         <div className="grid gap-4 md:grid-cols-3 mb-6">

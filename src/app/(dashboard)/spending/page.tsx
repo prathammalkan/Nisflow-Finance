@@ -4,6 +4,7 @@ import { useDashboardStats, useSpendingByCategory, useDailySpending, useRecentTr
 import { formatINR } from '@/lib/finance/money';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, LineChart, Line } from 'recharts';
 import { format } from 'date-fns';
@@ -16,23 +17,15 @@ export default function SpendingPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: categories, isLoading: categoriesLoading } = useSpendingByCategory(now.getMonth() + 1, now.getFullYear());
   const { data: dailySpending, isLoading: dailyLoading } = useDailySpending(30);
-  const { data: recentTransactions, isLoading: recentLoading } = useRecentTransactions(50); // Get more to filter expenses
+  const { data: recentTransactions, isLoading: recentLoading } = useRecentTransactions(50);
 
-  // Compute stats
   const thisMonthSpending = stats?.thisMonthExpenses || 0;
-  
-  // Calculate today's spending from daily spending
   const todayStr = now.toISOString().substring(0, 10);
   const todaySpending = dailySpending?.find(d => d.date === todayStr)?.amount || 0;
-  
-  // Calculate this week's spending (last 7 days from daily spending for simplicity)
   const thisWeekSpending = dailySpending?.slice(-7).reduce((sum, day) => sum + day.amount, 0) || 0;
-  
-  // Daily average for this month
   const daysInMonth = now.getDate();
   const dailyAverage = thisMonthSpending / Math.max(1, daysInMonth);
 
-  // Largest transactions this month (expenses only)
   const largestTransactions = recentTransactions
     ?.filter(tx => tx.direction === 'out')
     .sort((a, b) => Number(b.amount) - Number(a.amount))
@@ -40,9 +33,10 @@ export default function SpendingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-2xl font-bold tracking-tight">Spending Analysis</h2>
-      </div>
+      <PageHeader
+        title="Spending Analysis"
+        description={`Overview of your expenses for ${now.toLocaleString('default', { month: 'long', year: 'numeric' })}.`}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
