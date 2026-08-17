@@ -176,7 +176,7 @@ STRICT SCOPE AND BEHAVIOR RULES:
 4. Keep answers concise, professional, and directly actionable.`;
 
     const result = streamText({
-      model: google('gemini-2.0-flash'),
+      model: google('gemini-3.6-flash'),
       system: systemPrompt,
       messages: sanitizedMessages,
     });
