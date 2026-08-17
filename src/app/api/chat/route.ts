@@ -38,6 +38,16 @@ export async function POST(req: Request) {
     if (!messages || !Array.isArray(messages)) {
       return new Response('Invalid request body', { status: 400 });
     }
+    // Limit message history to prevent prompt injection via large payloads
+    if (messages.length > 20) {
+      return new Response(JSON.stringify({ error: 'Too many messages in history.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    const sanitizedMessages = messages
+      .map((m: any) => ({
+        role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: String(m.content || '').slice(0, 2000),
+      }))
+      .filter((m) => m.content.trim().length > 0);
 
     // Fetch live user financial context
     const now = new Date();
@@ -126,10 +136,7 @@ STRICT SCOPE AND BEHAVIOR RULES:
     const result = streamText({
       model: google('gemini-2.0-flash'),
       system: systemPrompt,
-      messages: messages.map((m: any) => ({
-        role: m.role,
-        content: m.content || '',
-      })),
+      messages: sanitizedMessages,
     });
 
     return result.toTextStreamResponse();
