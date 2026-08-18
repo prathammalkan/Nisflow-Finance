@@ -1,34 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { calculateNextDueDate } from '@/lib/hooks/use-recurring';
 import Decimal from 'decimal.js';
 import { format, parseISO } from 'date-fns';
+import crypto from 'node:crypto';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
+
+/**
+ * Constant-time comparison for bearer token authorization to prevent timing attacks.
+ */
+function isAuthorizedCron(authHeader: string | null, cronSecret: string | undefined): boolean {
+  if (!authHeader || !cronSecret || cronSecret.trim().length === 0) {
+    return false;
+  }
+  const expectedHeader = `Bearer ${cronSecret}`;
+  const headerBuf = Buffer.from(authHeader);
+  const expectedBuf = Buffer.from(expectedHeader);
+
+  if (headerBuf.length !== expectedBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(headerBuf, expectedBuf);
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: userData } = await supabase.auth.getUser();
-
-    // Check optional CRON_SECRET header for scheduled invocation
     const authHeader = req.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
-    const isCronAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`;
+    const isCronAuthorized = isAuthorizedCron(authHeader, cronSecret);
 
-    if (!userData.user && !isCronAuthorized) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    let dbClient: any;
+    let targetUserId: string | null = null;
+
+    if (isCronAuthorized) {
+      // Server-side scheduled execution using isolated admin client to process system-wide due rules
+      dbClient = createAdminClient();
+    } else {
+      // Regular user execution using standard user session and client RLS
+      const userSupabase = await createClient();
+      const { data: userData, error: authError } = await userSupabase.auth.getUser();
+
+      if (authError || !userData?.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      dbClient = userSupabase;
+      targetUserId = userData.user.id;
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
 
     // 1. Fetch due active recurring rules
-    let query = (supabase.from('recurring_transactions') as any)
+    let query = dbClient
+      .from('recurring_transactions')
       .select('*')
       .eq('is_active', true)
       .lte('next_due_date', todayStr);
 
-    // If regular authenticated user, filter by their user_id
-    if (userData.user && !isCronAuthorized) {
-      query = query.eq('user_id', userData.user.id);
+    // If regular authenticated user, filter strictly by their verified auth session user_id
+    if (targetUserId) {
+      query = query.eq('user_id', targetUserId);
     }
 
     const { data: dueRules, error: rulesError } = await query;
@@ -47,7 +79,7 @@ export async function POST(req: NextRequest) {
       const occurrenceRef = `REC:${rule.id}:${rule.next_due_date}`;
 
       // Idempotency check: verify if a transaction with this deterministic key was already recorded
-      const { data: existingTx } = await (supabase.from('transactions') as any)
+      const { data: existingTx } = await (dbClient.from('transactions') as any)
         .select('id')
         .eq('user_id', rule.user_id)
         .eq('bank_reference', occurrenceRef)
@@ -58,7 +90,7 @@ export async function POST(req: NextRequest) {
         const nextDue = calculateNextDueDate(parseISO(rule.next_due_date), rule.frequency);
         const isPastEnd = rule.end_date && nextDue > parseISO(rule.end_date);
 
-        await (supabase.from('recurring_transactions') as any)
+        await (dbClient.from('recurring_transactions') as any)
           .update({
             next_due_date: format(nextDue, 'yyyy-MM-dd'),
             last_created_date: todayStr,
@@ -71,27 +103,30 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Insert transaction into NisFlow ledger
-      const txAmount = new Decimal(rule.amount || 0).toNumber();
-      const { error: insertError } = await (supabase.from('transactions') as any)
-        .insert({
-          user_id: rule.user_id,
-          account_id: rule.account_id,
-          category_id: rule.category_id,
-          counterparty_id: rule.counterparty_id,
-          description: rule.description,
-          amount: txAmount,
-          transaction_type: rule.type,
-          direction: rule.direction,
+      // Insert transaction into NisFlow double-entry ledger
+      const recType = (rule.type || 'expense').toLowerCase() === 'transfer' ? 'transfer' : (rule.direction === 'in' ? 'income' : 'expense');
+      
+      const ledgerResult = await recordFinancialTransaction(dbClient as any, {
+        userId: rule.user_id,
+        type: recType,
+        accountId: rule.account_id,
+        categoryId: rule.category_id,
+        counterpartyId: rule.counterparty_id,
+        description: rule.description,
+        amount: rule.amount,
+        date: rule.next_due_date,
+        idempotencyKey: occurrenceRef,
+        sourceType: 'recurring',
+        sourceId: rule.id,
+        notes: rule.notes ? `[Recurring] ${rule.notes}` : '[Recurring scheduled transaction]',
+        metadata: {
           ownership: rule.ownership || 'personal',
-          status: 'confirmed',
-          date: rule.next_due_date,
-          bank_reference: occurrenceRef,
-          notes: rule.notes ? `[Recurring] ${rule.notes}` : '[Recurring scheduled transaction]',
-        });
+          frequency: rule.frequency,
+        }
+      });
 
-      if (insertError) {
-        console.error(`Failed to create transaction for recurring rule ${rule.id}:`, insertError);
+      if (!ledgerResult.success) {
+        console.error(`Failed to post ledger entry for recurring rule ${rule.id}:`, ledgerResult.error);
         continue;
       }
 
@@ -99,7 +134,7 @@ export async function POST(req: NextRequest) {
       const nextDue = calculateNextDueDate(parseISO(rule.next_due_date), rule.frequency);
       const isPastEnd = rule.end_date && nextDue > parseISO(rule.end_date);
 
-      await (supabase.from('recurring_transactions') as any)
+      await (dbClient.from('recurring_transactions') as any)
         .update({
           next_due_date: format(nextDue, 'yyyy-MM-dd'),
           last_created_date: todayStr,
@@ -118,6 +153,7 @@ export async function POST(req: NextRequest) {
       skippedCount: skippedIds.length,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
+    console.error('Recurring execution error occurred');
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

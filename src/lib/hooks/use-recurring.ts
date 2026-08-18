@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import Decimal from 'decimal.js';
 import { format, parseISO } from 'date-fns';
 import { calculateNextDueDate } from '@/lib/finance/recurring';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 
 export { calculateNextDueDate };
 
@@ -84,34 +85,30 @@ export function useMarkRecurringDone() {
       const todayStr = new Date().toISOString().split('T')[0];
       const occurrenceRef = `REC:${recurring.id}:${recurring.next_due_date}`;
 
-      // Idempotency: verify no duplicate transaction exists for this occurrence
-      const { data: existingTx } = await (supabase.from('transactions') as any)
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('bank_reference', occurrenceRef)
-        .limit(1);
-
-      if (!existingTx || existingTx.length === 0) {
-        const amount = new Decimal(recurring.amount || 0).toNumber();
-
-        // Insert actual transaction
-        const { error: txError } = await (supabase.from('transactions') as any).insert({
-          user_id: user.id,
-          account_id: recurring.account_id,
-          category_id: recurring.category_id,
-          counterparty_id: recurring.counterparty_id,
-          description: recurring.description,
-          amount,
-          transaction_type: recurring.type,
-          direction: recurring.direction,
+      // Post to authoritative double-entry ledger with deterministic idempotency
+      const recType = (recurring.type || 'expense').toLowerCase() === 'transfer' ? 'transfer' : (recurring.direction === 'in' ? 'income' : 'expense');
+      
+      const ledgerResult = await recordFinancialTransaction(supabase as any, {
+        userId: user.id,
+        type: recType,
+        accountId: recurring.account_id,
+        categoryId: recurring.category_id,
+        counterpartyId: recurring.counterparty_id,
+        description: recurring.description || 'Recurring Transaction',
+        amount: recurring.amount,
+        date: recurring.next_due_date || todayStr,
+        idempotencyKey: occurrenceRef,
+        sourceType: 'recurring',
+        sourceId: recurring.id,
+        notes: recurring.notes ? `[Recurring] ${recurring.notes}` : '[Recurring scheduled transaction]',
+        metadata: {
           ownership: recurring.ownership || 'personal',
-          status: 'confirmed',
-          date: recurring.next_due_date || todayStr,
-          bank_reference: occurrenceRef,
-          notes: recurring.notes ? `[Recurring] ${recurring.notes}` : '[Recurring scheduled transaction]',
-        });
+          frequency: recurring.frequency,
+        }
+      });
 
-        if (txError) throw txError;
+      if (!ledgerResult.success) {
+        throw new Error(ledgerResult.error || 'Failed to post recurring transaction to ledger');
       }
 
       // Update next_due_date

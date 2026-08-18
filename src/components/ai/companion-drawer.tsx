@@ -28,6 +28,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAccounts } from '@/lib/hooks/use-accounts';
 import { usePeople } from '@/lib/hooks/use-people';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 import { formatINR } from '@/lib/finance/money';
 import { toast } from 'sonner';
 
@@ -339,8 +340,29 @@ export function CompanionDrawer() {
           throw new Error('Counterparty / Person is required for this action.');
         }
 
-        const table = action.actionType === 'payable' ? 'payables' : 'receivables';
-        const { error: insError } = await (supabase.from(table) as any).insert({
+        const fallbackAccountId = accounts && accounts.length > 0 ? accounts[0].id : null;
+        if (!fallbackAccountId) {
+          throw new Error('An active bank or cash account is required to record this entry.');
+        }
+
+        const isBorrowing = action.actionType === 'payable';
+        const ledgerRes = await recordFinancialTransaction(supabase as any, {
+          userId: user.id,
+          type: isBorrowing ? 'borrowing' : 'lending',
+          accountId: fallbackAccountId,
+          counterpartyId,
+          amount: Number(action.amount),
+          date: action.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          description: action.description || (isBorrowing ? `Borrowed from ${action.personName || 'person'}` : `Lent to ${action.personName || 'person'}`),
+          notes: action.notes || null,
+          idempotencyKey: `AI:${user.id}:${msgId}:people`,
+          sourceType: 'ai_action',
+        });
+
+        if (!ledgerRes.success) throw new Error(ledgerRes.error || 'Failed to record entry in ledger');
+
+        const table = isBorrowing ? 'payables' : 'receivables';
+        await (supabase.from(table) as any).insert({
           user_id: user.id,
           counterparty_id: counterpartyId,
           amount: Number(action.amount),
@@ -349,17 +371,16 @@ export function CompanionDrawer() {
           status: 'PENDING',
         });
 
-        if (insError) throw insError;
-
         queryClient.invalidateQueries({ queryKey: ['payables'] });
         queryClient.invalidateQueries({ queryKey: ['receivables'] });
         queryClient.invalidateQueries({ queryKey: ['people'] });
+        queryClient.invalidateQueries({ queryKey: ['accounts'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
 
         toast.success(
-          action.actionType === 'payable'
-            ? `Recorded borrowing of ${formatINR(action.amount)} from ${action.personName || 'person'}`
-            : `Recorded receivable of ${formatINR(action.amount)} from ${action.personName || 'person'}`
+          isBorrowing
+            ? `Recorded borrowing of ${formatINR(action.amount)} from ${action.personName || 'person'} in ledger`
+            : `Recorded receivable of ${formatINR(action.amount)} from ${action.personName || 'person'} in ledger`
         );
       } else {
         // Transaction action
@@ -381,27 +402,28 @@ export function CompanionDrawer() {
         }
 
         const dir = action.direction || (action.type === 'income' ? 'in' : 'out');
-        const txType = action.type || (dir === 'in' ? 'income' : 'expense');
+        const txType = action.type === 'transfer' ? 'transfer' : (dir === 'in' || action.type === 'income' ? 'income' : 'expense');
 
-        const { error: txError } = await (supabase.from('transactions') as any).insert({
-          user_id: user.id,
-          account_id: targetAccountId,
-          amount: Number(action.amount),
+        const ledgerRes = await recordFinancialTransaction(supabase as any, {
+          userId: user.id,
           type: txType,
-          direction: dir,
+          accountId: targetAccountId,
+          categoryId: (action as any).categoryId || null,
+          amount: Number(action.amount),
+          date: action.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           description: action.description || 'Transaction via AI Assistant',
           notes: action.notes || null,
-          date: action.date ? new Date(action.date).toISOString() : new Date().toISOString(),
-          status: 'confirmed',
+          idempotencyKey: `AI:${user.id}:${msgId}:tx`,
+          sourceType: 'ai_action',
         });
 
-        if (txError) throw txError;
+        if (!ledgerRes.success) throw new Error(ledgerRes.error || 'Failed to post transaction to ledger');
 
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         queryClient.invalidateQueries({ queryKey: ['accounts'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
 
-        toast.success(`Recorded ${txType} of ${formatINR(action.amount)}!`);
+        toast.success(`Recorded ${txType} of ${formatINR(action.amount)} in ledger!`);
       }
 
       setActionStatuses((prev) => ({ ...prev, [msgId]: 'success' }));

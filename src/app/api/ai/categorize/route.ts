@@ -4,19 +4,7 @@ import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 
-// Rate limiter: 60 categorize requests per user per minute
-const catRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-function checkCatRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const entry = catRateLimitMap.get(userId);
-  if (!entry || now > entry.resetAt) {
-    catRateLimitMap.set(userId, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (entry.count >= 60) return false;
-  entry.count++;
-  return true;
-}
+import { checkCategorizeRateLimit } from '@/lib/security/rate-limit';
 
 export async function POST(req: Request) {
   try {
@@ -27,8 +15,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!checkCatRateLimit(user.id)) {
-      return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    // Distributed Rate limit check
+    const rateLimitResult = await checkCategorizeRateLimit(user.id, req);
+
+    if (rateLimitResult.status === 'rate_limited') {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment before trying again.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateLimitResult.retryAfter) },
+        }
+      );
+    }
+
+    if (rateLimitResult.status === 'service_unavailable') {
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: 503 }
+      );
     }
 
     const body = await req.json();
@@ -41,9 +45,9 @@ export async function POST(req: Request) {
     // Cap description length to prevent prompt injection
     const sanitizedDescription = String(description).slice(0, 200);
 
-    // Fetch user's categories
+    // Fetch user's categories from transaction_categories
     const { data: categories, error } = await supabase
-      .from('categories')
+      .from('transaction_categories')
       .select('id, name, type, is_system')
       .order('name');
 

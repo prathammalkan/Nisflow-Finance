@@ -3,21 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 
-// Shared in-memory rate limiter: 10 insight requests per user per hour
-const insightRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-function checkInsightRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const windowMs = 60 * 60 * 1000; // 1 hour
-  const maxReqs = 10;
-  const entry = insightRateLimitMap.get(userId);
-  if (!entry || now > entry.resetAt) {
-    insightRateLimitMap.set(userId, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= maxReqs) return false;
-  entry.count++;
-  return true;
-}
+import { checkInsightRateLimit } from '@/lib/security/rate-limit';
 
 export async function POST(req: Request) {
   try {
@@ -28,11 +14,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Rate limit: max 10 insight requests per user per hour
-    if (!checkInsightRateLimit(user.id)) {
+    // Distributed Rate limit check: 15 requests per hour
+    const rateLimitResult = await checkInsightRateLimit(user.id, req);
+
+    if (rateLimitResult.status === 'rate_limited') {
       return NextResponse.json(
-        { error: 'Too many requests. Insight generation is limited to 10 per hour.' },
-        { status: 429, headers: { 'Retry-After': '3600' } }
+        { error: 'Too many requests. Insight generation is limited to 15 per hour.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateLimitResult.retryAfter) },
+        }
+      );
+    }
+
+    if (rateLimitResult.status === 'service_unavailable') {
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: 503 }
       );
     }
 
@@ -42,7 +40,7 @@ export async function POST(req: Request) {
     // Fetch current month's transactions (capped at 100 to prevent huge prompts)
     const { data: currentMonthData, error } = await supabase
       .from('transactions')
-      .select('amount, direction, type, description, date, categories!transactions_category_id_fkey(name)')
+      .select('amount, direction, type, description, date, transaction_categories!transactions_category_id_fkey(name)')
       .eq('user_id', user.id)
       .gte('date', currentMonthStart)
       .order('date', { ascending: false })

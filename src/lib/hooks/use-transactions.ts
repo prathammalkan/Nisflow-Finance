@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 
 export type TransactionFilters = {
   account_id?: string;
@@ -108,24 +109,51 @@ export function useCreateTransaction() {
 
   return useMutation({
     mutationFn: async (newTransaction: any) => {
-      const { data, error } = await supabase
-        .from('transactions')
-        // @ts-ignore
-        .insert([newTransaction] as any)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('User is not authenticated');
+
+      const rawType = (newTransaction.type || newTransaction.transaction_type || 'expense').toLowerCase();
+      const txType = rawType === 'transfer' ? 'transfer' : (newTransaction.direction === 'in' || rawType === 'income' ? 'income' : 'expense');
+
+      const idempotencyKey = newTransaction.bank_reference || `TXN:${user.id}:${Date.now()}:${Math.random().toString(36).substring(2, 9)}`;
+
+      const res = await recordFinancialTransaction(supabase as any, {
+        userId: user.id,
+        type: txType,
+        accountId: newTransaction.account_id,
+        toAccountId: newTransaction.to_account_id,
+        categoryId: newTransaction.category_id,
+        counterpartyId: newTransaction.counterparty_id,
+        amount: newTransaction.amount,
+        date: newTransaction.date,
+        description: newTransaction.description || 'Transaction',
+        notes: newTransaction.notes,
+        idempotencyKey,
+        sourceType: 'manual',
+        metadata: {
+          ownership: newTransaction.ownership || 'personal',
+          tags: newTransaction.tags,
+        }
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to post transaction to authoritative ledger');
+      }
+
+      return {
+        id: res.transactionId || res.journalEntryId,
+        journal_entry_id: res.journalEntryId,
+        ...newTransaction,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Balance updates
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
-      toast.success('Transaction created successfully');
+      toast.success('Transaction posted to ledger successfully');
     },
     onError: (error) => {
-      toast.error('Failed to create transaction: ' + error.message);
+      toast.error('Failed to post transaction: ' + error.message);
     }
   });
 }

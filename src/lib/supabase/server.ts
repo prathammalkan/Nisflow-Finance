@@ -28,3 +28,29 @@ export async function createClient() {
     }
   );
 }
+
+/**
+ * Creates an administrative Supabase client using SUPABASE_SERVICE_ROLE_KEY.
+ * SECURITY: Must ONLY be called in verified server-side background execution contexts (e.g. CRON).
+ * NEVER expose to client components or public API callers.
+ */
+export function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured for administrative execution.');
+  }
+
+  // Use createServerClient or supabase-js client without session persistence
+  return createServerClient<Database>(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      cookies: {
+        getAll() { return []; },
+        setAll() {},
+      },
+    }
+  );
+}

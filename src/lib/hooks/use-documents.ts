@@ -8,15 +8,29 @@ export function useDocuments(entityType?: string, entityId?: string) {
     queryKey: ['documents', entityType, entityId],
     queryFn: async () => {
       let query = supabase.from('documents').select('*').order('created_at', { ascending: false });
-      
+
       if (entityType) query = query.eq('entity_type', entityType);
       if (entityId) query = query.eq('entity_id', entityId);
-      
+
       const { data, error } = await query;
       if (error) throw error;
       return data as any[];
-    }
+    },
   });
+}
+
+// Generate temporary signed URL for secure private document access
+export async function getDocumentSignedUrl(filePath: string, expiresInSeconds = 300): Promise<string> {
+  const supabase = createClient();
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(filePath, expiresInSeconds);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message || 'Failed to generate secure document link');
+  }
+
+  return data.signedUrl;
 }
 
 export function useUploadDocument() {
@@ -25,37 +39,50 @@ export function useUploadDocument() {
 
   return useMutation({
     mutationFn: async ({ file, metadata }: { file: File; metadata: any }) => {
-      // 1. Upload to Supabase Storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${crypto.randomUUID()}.${fileExt}`;
-      const filePath = `documents/${fileName}`;
-      
+      // 1. Authenticate user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Authentication required to upload documents');
+      }
+
+      // 2. Upload to Supabase Storage in isolated user directory: <user_id>/<uuid>.<ext>
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'dat';
+      const cleanExt = fileExt.replace(/[^a-zA-Z0-9]/g, '');
+      const uniqueFileId = crypto.randomUUID();
+      const filePath = `${user.id}/${uniqueFileId}.${cleanExt}`;
+
       const { error: uploadError } = await supabase.storage
         .from('documents')
-        .upload(filePath, file);
-        
+        .upload(filePath, file, {
+          upsert: false,
+          contentType: file.type || 'application/octet-stream',
+        });
+
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('documents')
-        .getPublicUrl(filePath);
-
-      // 2. Save metadata to DB
+      // 3. Save metadata to DB bound to authenticated user
       const { data, error } = await supabase
         .from('documents')
-        .insert([{
-          ...metadata,
-          name: file.name,
-          file_url: publicUrl,
-          file_path: filePath,
-          content_type: file.type,
-          size_bytes: file.size
-        }] as any)
+        .insert([
+          {
+            user_id: user.id,
+            name: file.name,
+            file_path: filePath,
+            file_type: file.type || null,
+            file_size: file.size || null,
+            entity_type: metadata?.entity_type || null,
+            entity_id: metadata?.entity_id || null,
+            description: metadata?.description || null,
+          },
+        ] as any)
         .select()
         .single();
-        
-      if (error) throw error;
+
+      if (error) {
+        // Rollback uploaded storage object if metadata insert fails
+        await supabase.storage.from('documents').remove([filePath]).catch(() => {});
+        throw error;
+      }
       return data as any;
     },
     onSuccess: () => {
@@ -70,21 +97,29 @@ export function useDeleteDocument() {
 
   return useMutation({
     mutationFn: async (document: any) => {
-      // 1. Delete from Storage
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Authentication required to delete documents');
+      }
+
+      // 1. Delete from Storage if file_path exists
       if (document.file_path) {
         const { error: storageError } = await supabase.storage
           .from('documents')
           .remove([document.file_path]);
-          
-        if (storageError) console.error('Failed to delete file from storage', storageError);
+
+        if (storageError) {
+          console.error('Failed to delete file from storage:', storageError);
+        }
       }
 
-      // 2. Delete from DB
+      // 2. Delete from DB ensuring user ownership
       const { error } = await supabase
         .from('documents')
         .delete()
-        .eq('id', document.id);
-        
+        .eq('id', document.id)
+        .eq('user_id', user.id);
+
       if (error) throw error;
       return document.id;
     },

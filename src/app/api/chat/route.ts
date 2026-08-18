@@ -3,19 +3,7 @@ import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
 import Decimal from 'decimal.js';
 
-// Simple in-memory rate limiter: 20 requests per user per minute
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-function checkRateLimit(userId: string, maxReqs = 20, windowMs = 60_000): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= maxReqs) return false;
-  entry.count++;
-  return true;
-}
+import { checkChatRateLimit } from '@/lib/security/rate-limit';
 
 export async function POST(req: Request) {
   try {
@@ -29,12 +17,30 @@ export async function POST(req: Request) {
       });
     }
 
-    // Rate limit: 20 AI requests per user per minute
-    if (!checkRateLimit(user.id)) {
-      return new Response(JSON.stringify({ error: 'Too many requests. Please wait a moment before asking again.' }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
-      });
+    // Distributed Rate limit check with 429 vs 503 differentiation
+    const rateLimitResult = await checkChatRateLimit(user.id, req);
+
+    if (rateLimitResult.status === 'rate_limited') {
+      return new Response(
+        JSON.stringify({ error: 'Too many requests. Please wait a moment before asking again.' }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimitResult.retryAfter),
+          },
+        }
+      );
+    }
+
+    if (rateLimitResult.status === 'service_unavailable') {
+      return new Response(
+        JSON.stringify({ error: rateLimitResult.error }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     const { messages } = await req.json();
@@ -72,8 +78,9 @@ export async function POST(req: Request) {
       { data: receivables },
       { data: payables },
     ] = await Promise.all([
-      supabase.from('accounts').select('id, name, type, balance, is_active').eq('user_id', user.id).eq('is_active', true),
-      supabase.from('counterparties').select('id, name').eq('user_id', user.id),
+      // Hardened Context: Fetch bounded subsets with minimal required fields (Least-Privilege context)
+      supabase.from('accounts').select('id, name, type, balance').eq('user_id', user.id).eq('is_active', true).limit(50),
+      supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
       supabase.from('transactions').select('amount, direction, type').eq('user_id', user.id).gte('date', startOfMonth),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
       supabase.from('receivables').select('amount, received_amount, status').eq('user_id', user.id).neq('status', 'settled'),

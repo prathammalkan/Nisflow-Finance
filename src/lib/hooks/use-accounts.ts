@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { Decimal } from 'decimal.js';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 import type { Database } from '@/types/database';
 
 type Account = Database['public']['Tables']['accounts']['Row'];
@@ -53,15 +55,46 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (newAccount: AccountInsert) => {
+    mutationFn: async (newAccount: AccountInsert & { opening_balance?: number | string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const initialBalDec = new Decimal((newAccount as any).opening_balance || (newAccount as any).balance || 0);
+
+      // Create account with 0 balance, then post opening balance to ledger
+      const payload = {
+        ...newAccount,
+        user_id: userData.user.id,
+        balance: 0,
+      };
+
       const { data, error } = await supabase
         .from('accounts')
         // @ts-ignore
-        .insert(newAccount as any)
+        .insert(payload as any)
         .select()
         .single();
 
       if (error) throw error;
+
+      if (initialBalDec.gt(0)) {
+        const ledgerRes = await recordFinancialTransaction(supabase as any, {
+          userId: userData.user.id,
+          type: 'opening_balance',
+          accountId: (data as any).id,
+          amount: initialBalDec.toFixed(2),
+          date: new Date().toISOString().split('T')[0],
+          description: `Opening Balance for ${(data as any).name}`,
+          idempotencyKey: `ACC:OPEN:${(data as any).id}`,
+          sourceType: 'account_opening',
+          sourceId: (data as any).id,
+        });
+
+        if (!ledgerRes.success) {
+          console.warn('Failed to post opening balance to ledger:', ledgerRes.error);
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
@@ -80,10 +113,13 @@ export function useUpdateAccount() {
 
   return useMutation({
     mutationFn: async ({ id, ...updateData }: { id: string } & AccountUpdate) => {
+      // Disallow direct balance mutations; balances must strictly be derived from ledger postings
+      const { balance, current_balance, ...safeUpdateData } = updateData as any;
+
       const { data, error } = await supabase
         .from('accounts')
         // @ts-ignore
-        .update(updateData as any)
+        .update(safeUpdateData as any)
         .eq('id', id)
         .select()
         .single();

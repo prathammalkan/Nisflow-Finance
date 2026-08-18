@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import Decimal from 'decimal.js';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 
 export function useImportStatement() {
   const supabase = createClient();
@@ -57,5 +59,71 @@ export function useImportHistory() {
       if (error) throw error;
       return data as any[];
     }
+  });
+}
+
+export function usePostStatementToLedger() {
+  const supabase = createClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      accountId,
+      statementId,
+      transactions,
+    }: {
+      accountId: string;
+      statementId: string;
+      transactions: Array<{
+        date: string;
+        description: string;
+        amount: number | string;
+        direction: 'in' | 'out';
+        reference?: string;
+        categoryId?: string;
+        rowIndex: number;
+      }>;
+    }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const results = [];
+      for (const tx of transactions) {
+        const amountDec = new Decimal(tx.amount || 0);
+        if (amountDec.lte(0)) continue;
+
+        const idempotencyKey = `RECON:${statementId}:${tx.rowIndex}`;
+        const txType = tx.direction === 'in' ? 'income' : 'expense';
+
+        const res = await recordFinancialTransaction(supabase as any, {
+          userId: userData.user.id,
+          type: txType,
+          accountId,
+          categoryId: tx.categoryId || null,
+          amount: amountDec.toFixed(2),
+          date: tx.date,
+          description: tx.description || 'Imported Transaction',
+          idempotencyKey,
+          sourceType: 'reconciliation_import',
+          sourceId: statementId,
+          notes: tx.reference ? `[Ref: ${tx.reference}]` : undefined,
+          metadata: {
+            statementId,
+            rowIndex: tx.rowIndex,
+            reference: tx.reference,
+          },
+        });
+
+        results.push(res);
+      }
+
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['bank_statement_transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+    },
   });
 }

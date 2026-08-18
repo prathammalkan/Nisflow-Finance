@@ -1,10 +1,10 @@
-import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
+import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export function exportToCSV(data: any[], filename: string) {
-  const ws = XLSX.utils.json_to_sheet(data);
-  const csv = XLSX.utils.sheet_to_csv(ws);
+  const csv = Papa.unparse(data);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   if (link.download !== undefined) {
@@ -18,13 +18,31 @@ export function exportToCSV(data: any[], filename: string) {
   }
 }
 
-export function exportToExcel(sheets: { name: string; data: any[] }[], filename: string) {
-  const wb = XLSX.utils.book_new();
+export async function exportToExcel(sheets: { name: string; data: any[] }[], filename: string) {
+  const workbook = new ExcelJS.Workbook();
   sheets.forEach((sheet) => {
-    const ws = XLSX.utils.json_to_sheet(sheet.data);
-    XLSX.utils.book_append_sheet(wb, ws, sheet.name);
+    const ws = workbook.addWorksheet(sheet.name);
+    if (sheet.data && sheet.data.length > 0) {
+      const headers = Object.keys(sheet.data[0]);
+      ws.columns = headers.map((h) => ({ header: h, key: h }));
+      ws.addRows(sheet.data);
+    }
   });
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const link = document.createElement('a');
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}.xlsx`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 export function exportToPDF(title: string, data: any[], filename: string) {

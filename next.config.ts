@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const securityHeaders = [
   {
     key: 'X-DNS-Prefetch-Control',
@@ -15,7 +17,7 @@ const securityHeaders = [
   },
   {
     key: 'X-Frame-Options',
-    value: 'SAMEORIGIN',
+    value: 'DENY',
   },
   {
     key: 'X-Content-Type-Options',
@@ -33,14 +35,19 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // In production, unsafe-eval is completely removed. In dev, eval is allowed for Turbopack/HMR.
+      isProd
+        ? "script-src 'self' 'unsafe-inline'"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://qyjhicibrciqcznsdevk.supabase.co",
       "connect-src 'self' https://qyjhicibrciqcznsdevk.supabase.co wss://qyjhicibrciqcznsdevk.supabase.co https://generativelanguage.googleapis.com",
       "frame-ancestors 'none'",
+      "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
+      "upgrade-insecure-requests",
     ].join('; '),
   },
 ];
@@ -51,7 +58,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "qyjhicibrciqcznsdevk.supabase.co",
-        pathname: "/storage/v1/object/public/**",
+        pathname: "/**",
       },
     ],
   },

@@ -149,6 +149,47 @@ export interface Database {
           created_at?: string
         }
       }
+      transaction_categories: {
+        Row: {
+          id: string
+          user_id: string | null
+          name: string
+          type: TransactionType | string | null
+          icon: string | null
+          color: string | null
+          is_system: boolean | null
+          parent_id: string | null
+          sort_order: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          name: string
+          type?: TransactionType | string | null
+          icon?: string | null
+          color?: string | null
+          is_system?: boolean | null
+          parent_id?: string | null
+          sort_order?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          name?: string
+          type?: TransactionType | string | null
+          icon?: string | null
+          color?: string | null
+          is_system?: boolean | null
+          parent_id?: string | null
+          sort_order?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       counterparties: {
         Row: {
           id: string
@@ -532,28 +573,46 @@ export interface Database {
           id: string
           user_id: string
           name: string
-          file_url: string
-          entity_type: string
-          entity_id: string
+          file_path: string | null
+          file_url: string | null
+          file_type: string | null
+          file_size: number | null
+          entity_type: string | null
+          entity_id: string | null
+          description: string | null
           created_at: string
+          uploaded_at?: string | null
+          updated_at?: string | null
         }
         Insert: {
           id?: string
           user_id: string
           name: string
-          file_url: string
-          entity_type: string
-          entity_id: string
+          file_path?: string | null
+          file_url?: string | null
+          file_type?: string | null
+          file_size?: number | null
+          entity_type?: string | null
+          entity_id?: string | null
+          description?: string | null
           created_at?: string
+          uploaded_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
           user_id?: string
           name?: string
-          file_url?: string
-          entity_type?: string
-          entity_id?: string
+          file_path?: string | null
+          file_url?: string | null
+          file_type?: string | null
+          file_size?: number | null
+          entity_type?: string | null
+          entity_id?: string | null
+          description?: string | null
           created_at?: string
+          uploaded_at?: string | null
+          updated_at?: string | null
         }
       }
       bank_statements: {
@@ -843,6 +902,213 @@ export interface Database {
           created_at?: string
         }
       }
+      ledger_accounts: {
+        Row: {
+          id: string
+          user_id: string
+          code: string
+          name: string
+          account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+          entity_type: string | null
+          entity_id: string | null
+          currency: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          code: string
+          name: string
+          account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+          entity_type?: string | null
+          entity_id?: string | null
+          currency?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          code?: string
+          name?: string
+          account_type?: 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+          entity_type?: string | null
+          entity_id?: string | null
+          currency?: string
+          is_active?: boolean
+          created_at?: string
+        }
+      }
+      journal_entries: {
+        Row: {
+          id: string
+          user_id: string
+          entry_number: number
+          transaction_date: string
+          posted_at: string
+          description: string
+          source_type: string
+          source_id: string | null
+          idempotency_key: string
+          status: 'posted' | 'reversed'
+          reversal_of_id: string | null
+          created_by: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          entry_number?: number
+          transaction_date: string
+          posted_at?: string
+          description: string
+          source_type: string
+          source_id?: string | null
+          idempotency_key: string
+          status?: 'posted' | 'reversed'
+          reversal_of_id?: string | null
+          created_by: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          entry_number?: number
+          transaction_date?: string
+          posted_at?: string
+          description?: string
+          source_type?: string
+          source_id?: string | null
+          idempotency_key?: string
+          status?: 'posted' | 'reversed'
+          reversal_of_id?: string | null
+          created_by?: string
+          created_at?: string
+        }
+      }
+      journal_lines: {
+        Row: {
+          id: string
+          journal_entry_id: string
+          ledger_account_id: string
+          user_id: string
+          debit_amount: number
+          credit_amount: number
+          currency: string
+          memo: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          journal_entry_id: string
+          ledger_account_id: string
+          user_id: string
+          debit_amount?: number
+          credit_amount?: number
+          currency?: string
+          memo?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          journal_entry_id?: string
+          ledger_account_id?: string
+          user_id?: string
+          debit_amount?: number
+          credit_amount?: number
+          currency?: string
+          memo?: string | null
+          created_at?: string
+        }
+      }
+      ledger_audit_log: {
+        Row: {
+          id: string
+          user_id: string
+          journal_entry_id: string
+          action: string
+          actor_id: string
+          payload_hash: string
+          metadata: Record<string, any>
+          timestamp: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          journal_entry_id: string
+          action: string
+          actor_id: string
+          payload_hash: string
+          metadata?: Record<string, any>
+          timestamp?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          journal_entry_id?: string
+          action?: string
+          actor_id?: string
+          payload_hash?: string
+          metadata?: Record<string, any>
+          timestamp?: string
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      post_journal_entry: {
+        Args: {
+          p_user_id: string
+          p_transaction_date: string
+          p_description: string
+          p_source_type: string
+          p_source_id: string | null
+          p_idempotency_key: string
+          p_lines: Array<{
+            ledger_account_id: string
+            debit_amount: number
+            credit_amount: number
+            currency?: string
+            memo?: string
+          }>
+          p_created_by: string
+          p_metadata?: Record<string, any>
+        }
+        Returns: string
+      }
+      post_reversal_entry: {
+        Args: {
+          p_user_id: string
+          p_original_entry_id: string
+          p_reason: string
+          p_idempotency_key: string
+          p_created_by: string
+          p_metadata?: Record<string, any>
+        }
+        Returns: string
+      }
+      get_ledger_account_balance: {
+        Args: {
+          p_ledger_account_id: string
+        }
+        Returns: number
+      }
+      reconcile_ledger_balances: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: Array<{
+          account_id: string
+          account_name: string
+          cached_balance: number
+          ledger_balance: number
+          discrepancy: number
+          is_reconciled: boolean
+        }>
+      }
     }
   }
 }
@@ -874,6 +1140,10 @@ export type Tag = Database['public']['Tables']['tags']['Row'];
 export type TaxRecord = Database['public']['Tables']['tax_records']['Row'];
 export type SplitExpense = Database['public']['Tables']['split_expenses']['Row'];
 export type SplitExpenseShare = Database['public']['Tables']['split_expense_shares']['Row'];
+export type LedgerAccount = Database['public']['Tables']['ledger_accounts']['Row'];
+export type JournalEntry = Database['public']['Tables']['journal_entries']['Row'];
+export type JournalLine = Database['public']['Tables']['journal_lines']['Row'];
+export type LedgerAuditLog = Database['public']['Tables']['ledger_audit_log']['Row'];
 
 export enum AccountType {
   CASH = 'CASH',

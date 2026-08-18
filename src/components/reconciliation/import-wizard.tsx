@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { X, Upload, FileText, CheckCircle2, ArrowRight } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
+import ExcelJS from 'exceljs';
 import { createClient } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatINR } from '@/lib/finance/money';
@@ -17,6 +18,12 @@ const ALLOWED_TYPES = [
 ];
 const MAX_FILE_SIZE_MB = 5;
 const MAX_ROWS = 500;
+
+import {
+  sanitizeImportText,
+  parseDateString,
+  parseCleanAmount,
+} from '@/lib/reconciliation/import-sanitizer';
 
 interface NormalizedTransaction {
   date: string;
@@ -54,7 +61,7 @@ export default function ImportWizard({
   const queryClient = useQueryClient();
   const supabase = createClient();
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -73,93 +80,114 @@ export default function ImportWizard({
 
     setFileName(file.name);
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', sheetRows: MAX_ROWS + 1 });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    try {
+      let rawJson: any[] = [];
 
-        if (!rawJson || rawJson.length === 0) {
+      if (ext === 'csv' || file.type === 'text/csv') {
+        // Safe CSV parsing via papaparse (treats formulas as raw strings, disarms injection)
+        const text = await file.text();
+        const parsed = Papa.parse<Record<string, any>>(text, {
+          header: true,
+          skipEmptyLines: 'greedy',
+          transform: (val) => sanitizeImportText(val),
+        });
+
+        rawJson = (parsed.data || []).filter((row) =>
+          Object.values(row).some((v) => v !== '' && v !== null && v !== undefined)
+        );
+      } else {
+        // Safe XLSX parsing via ExcelJS (extracts values without formula execution)
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(arrayBuffer);
+        const worksheet = workbook.worksheets[0];
+
+        if (!worksheet || worksheet.rowCount === 0) {
           toast.error('The uploaded file contains no data rows.');
           return;
         }
 
-        const capped = rawJson.slice(0, MAX_ROWS);
-        const cols = Object.keys(capped[0]);
-        setColumns(cols);
-        setFileData(capped);
+        const headers: string[] = [];
+        const headerRow = worksheet.getRow(1);
+        headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          headers[colNumber - 1] = String(cell.value || `Column_${colNumber}`).trim();
+        });
 
-        // Auto-detect columns
-        const lowerCols = cols.map((c) => ({ original: c, lower: c.toLowerCase() }));
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return; // skip header
+          if (rawJson.length >= MAX_ROWS) return;
 
-        const dCol = lowerCols.find((c) => c.lower.includes('date') || c.lower.includes('txn dt'))?.original || cols[0] || '';
-        const desc = lowerCols.find((c) => c.lower.includes('narration') || c.lower.includes('desc') || c.lower.includes('particular') || c.lower.includes('remark'))?.original || cols[1] || '';
-        const deb = lowerCols.find((c) => c.lower.includes('debit') || c.lower.includes('withdrawal') || c.lower === 'dr')?.original || '';
-        const cred = lowerCols.find((c) => c.lower.includes('credit') || c.lower.includes('deposit') || c.lower === 'cr')?.original || '';
-        const amt = lowerCols.find((c) => c.lower.includes('amount') || c.lower.includes('txn amt'))?.original || '';
-        const ref = lowerCols.find((c) => c.lower.includes('ref') || c.lower.includes('cheque') || c.lower.includes('chq') || c.lower.includes('utr') || c.lower.includes('upi'))?.original || '';
-        const bal = lowerCols.find((c) => c.lower.includes('balance') || c.lower.includes('bal'))?.original || '';
+          const rowData: Record<string, any> = {};
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const colName = headers[colNumber - 1] || `Col_${colNumber}`;
+            let cellVal = cell.value;
 
-        setDateCol(dCol);
-        setDescCol(desc);
-        setRefCol(ref);
-        setBalCol(bal);
+            // Disarm ExcelJS formula cells and extract static evaluated/text result
+            if (cellVal && typeof cellVal === 'object') {
+              if ('result' in cellVal) {
+                cellVal = (cellVal as any).result;
+              } else if ('text' in cellVal) {
+                cellVal = (cellVal as any).text;
+              } else if (cellVal instanceof Date) {
+                // Preserve native Date
+              } else {
+                cellVal = String(cellVal);
+              }
+            }
 
-        if (deb && cred) {
-          setAmountMode('dual');
-          setDebitCol(deb);
-          setCreditCol(cred);
-        } else {
-          setAmountMode('single');
-          setAmountCol(amt || cols[2] || '');
-        }
+            if (typeof cellVal === 'string') {
+              cellVal = sanitizeImportText(cellVal);
+            }
 
-        setStep(2);
-        toast.success(`Parsed ${capped.length} records successfully.`);
-      } catch {
-        toast.error('Failed to parse file. Ensure it is a valid CSV or Excel file.');
+            rowData[colName] = cellVal ?? '';
+          });
+
+          if (Object.values(rowData).some((v) => v !== '' && v !== null && v !== undefined)) {
+            rawJson.push(rowData);
+          }
+        });
       }
-    };
-    reader.readAsBinaryString(file);
-  };
 
-  // Helper to parse dates into ISO YYYY-MM-DD
-  const parseDateString = (val: any): string => {
-    if (!val) return new Date().toISOString().split('T')[0];
-    if (typeof val === 'number') {
-      // Excel serial date format
-      const dateObj = XLSX.SSF.parse_date_code(val);
-      if (dateObj) {
-        const m = String(dateObj.m).padStart(2, '0');
-        const d = String(dateObj.d).padStart(2, '0');
-        return `${dateObj.y}-${m}-${d}`;
+      if (!rawJson || rawJson.length === 0) {
+        toast.error('The uploaded file contains no data rows.');
+        return;
       }
-    }
-    const str = String(val).trim();
-    // Try native Date parse
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toISOString().split('T')[0];
-    }
-    // Try DD/MM/YYYY or DD-MM-YYYY
-    const parts = str.split(/[/.-]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
-        return `${parts[2]}-${parts[1]}-${parts[0]}`;
-      }
-    }
-    return new Date().toISOString().split('T')[0];
-  };
 
-  // Helper to parse numeric string cleanly
-  const parseCleanAmount = (val: any): number => {
-    if (val === null || val === undefined || val === '') return 0;
-    const cleanStr = String(val).replace(/[^0-9.-]/g, '');
-    const num = parseFloat(cleanStr);
-    return isNaN(num) ? 0 : Math.abs(num);
+      const capped = rawJson.slice(0, MAX_ROWS);
+      const cols = Object.keys(capped[0]);
+      setColumns(cols);
+      setFileData(capped);
+
+      // Auto-detect columns
+      const lowerCols = cols.map((c) => ({ original: c, lower: c.toLowerCase() }));
+
+      const dCol = lowerCols.find((c) => c.lower.includes('date') || c.lower.includes('txn dt'))?.original || cols[0] || '';
+      const desc = lowerCols.find((c) => c.lower.includes('narration') || c.lower.includes('desc') || c.lower.includes('particular') || c.lower.includes('remark'))?.original || cols[1] || '';
+      const deb = lowerCols.find((c) => c.lower.includes('debit') || c.lower.includes('withdrawal') || c.lower === 'dr')?.original || '';
+      const cred = lowerCols.find((c) => c.lower.includes('credit') || c.lower.includes('deposit') || c.lower === 'cr')?.original || '';
+      const amt = lowerCols.find((c) => c.lower.includes('amount') || c.lower.includes('txn amt'))?.original || '';
+      const ref = lowerCols.find((c) => c.lower.includes('ref') || c.lower.includes('cheque') || c.lower.includes('chq') || c.lower.includes('utr') || c.lower.includes('upi'))?.original || '';
+      const bal = lowerCols.find((c) => c.lower.includes('balance') || c.lower.includes('bal'))?.original || '';
+
+      setDateCol(dCol);
+      setDescCol(desc);
+      setRefCol(ref);
+      setBalCol(bal);
+
+      if (deb && cred) {
+        setAmountMode('dual');
+        setDebitCol(deb);
+        setCreditCol(cred);
+      } else {
+        setAmountMode('single');
+        setAmountCol(amt || cols[2] || '');
+      }
+
+      setStep(2);
+      toast.success(`Parsed ${capped.length} records successfully.`);
+    } catch (err: any) {
+      toast.error('Failed to parse file. Ensure it is a valid CSV or Excel file.');
+    }
   };
 
   // Normalize all rows according to the mapping

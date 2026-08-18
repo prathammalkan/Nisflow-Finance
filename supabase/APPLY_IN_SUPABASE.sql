@@ -118,4 +118,200 @@ CREATE POLICY "Users can manage their own tax records"
 
 CREATE INDEX IF NOT EXISTS idx_tax_records_user_fy ON public.tax_records(user_id, financial_year);
 
--- DONE. All tables and the categories view are now ready.
+-- ============================================================
+-- 5. STORAGE SECURITY (Task 3C)
+-- ============================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'documents',
+    'documents',
+    false,
+    10485760,
+    ARRAY[
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/jpg',
+        'image/webp',
+        'text/csv',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel'
+    ]
+)
+ON CONFLICT (id) DO UPDATE SET
+    public = false,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own documents in storage" ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload own documents to storage" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update own documents in storage" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own documents from storage" ON storage.objects;
+
+CREATE POLICY "Users can view own documents in storage"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+    bucket_id = 'documents' AND
+    (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can upload own documents to storage"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+    bucket_id = 'documents' AND
+    (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can update own documents in storage"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+    bucket_id = 'documents' AND
+    (auth.uid())::text = (storage.foldername(name))[1]
+)
+WITH CHECK (
+    bucket_id = 'documents' AND
+    (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can delete own documents from storage"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+    bucket_id = 'documents' AND
+    (auth.uid())::text = (storage.foldername(name))[1]
+);
+
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS file_path TEXT;
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS file_type TEXT;
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS file_size BIGINT;
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS entity_type TEXT;
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS entity_id UUID;
+
+-- ============================================================
+-- 6. DOUBLE-ENTRY FINANCIAL LEDGER FOUNDATION (Task 4A)
+-- ============================================================
+
+DO $$ BEGIN
+    CREATE TYPE public.ledger_account_type AS ENUM (
+        'asset',
+        'liability',
+        'equity',
+        'income',
+        'expense'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.journal_entry_status AS ENUM ('posted', 'reversed');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.ledger_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    account_type public.ledger_account_type NOT NULL,
+    entity_type TEXT,
+    entity_id UUID,
+    currency TEXT DEFAULT 'INR' NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT uq_ledger_account_code UNIQUE (user_id, code),
+    CONSTRAINT uq_ledger_account_entity UNIQUE (user_id, entity_type, entity_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.journal_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    entry_number BIGSERIAL,
+    transaction_date DATE NOT NULL,
+    posted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    description TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT,
+    idempotency_key TEXT NOT NULL,
+    status public.journal_entry_status DEFAULT 'posted' NOT NULL,
+    reversal_of_id UUID REFERENCES public.journal_entries(id),
+    created_by UUID REFERENCES auth.users(id) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT uq_journal_entry_idempotency UNIQUE (user_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.journal_lines (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    journal_entry_id UUID REFERENCES public.journal_entries(id) ON DELETE RESTRICT NOT NULL,
+    ledger_account_id UUID REFERENCES public.ledger_accounts(id) ON DELETE RESTRICT NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    debit_amount NUMERIC(15,2) DEFAULT 0.00 NOT NULL,
+    credit_amount NUMERIC(15,2) DEFAULT 0.00 NOT NULL,
+    currency TEXT DEFAULT 'INR' NOT NULL,
+    memo TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT chk_jl_positive_amounts CHECK (debit_amount >= 0 AND credit_amount >= 0),
+    CONSTRAINT chk_jl_debit_xor_credit CHECK (
+        (debit_amount > 0 AND credit_amount = 0) OR
+        (credit_amount > 0 AND debit_amount = 0)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS public.ledger_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    journal_entry_id UUID REFERENCES public.journal_entries(id) ON DELETE RESTRICT NOT NULL,
+    action TEXT NOT NULL,
+    actor_id UUID REFERENCES auth.users(id) NOT NULL,
+    payload_hash TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb NOT NULL,
+    timestamp TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_lines_account_user ON public.journal_lines(ledger_account_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON public.journal_lines(journal_entry_id);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_user_date ON public.journal_entries(user_id, transaction_date);
+CREATE INDEX IF NOT EXISTS idx_ledger_accounts_entity ON public.ledger_accounts(user_id, entity_type, entity_id);
+
+ALTER TABLE public.ledger_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ledger_audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own ledger accounts" ON public.ledger_accounts;
+CREATE POLICY "Users can view own ledger accounts" ON public.ledger_accounts FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own ledger accounts" ON public.ledger_accounts;
+CREATE POLICY "Users can insert own ledger accounts" ON public.ledger_accounts FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own ledger accounts" ON public.ledger_accounts;
+CREATE POLICY "Users can update own ledger accounts" ON public.ledger_accounts FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can view own journal entries" ON public.journal_entries FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own journal entries" ON public.journal_entries;
+CREATE POLICY "Users can insert own journal entries" ON public.journal_entries FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view own journal lines" ON public.journal_lines;
+CREATE POLICY "Users can view own journal lines" ON public.journal_lines FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own journal lines" ON public.journal_lines;
+CREATE POLICY "Users can insert own journal lines" ON public.journal_lines FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view own ledger audit logs" ON public.ledger_audit_log;
+CREATE POLICY "Users can view own ledger audit logs" ON public.ledger_audit_log FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own ledger audit logs" ON public.ledger_audit_log;
+CREATE POLICY "Users can insert own ledger audit logs" ON public.ledger_audit_log FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- ==============================================================================
+-- SECTION 7: DROP OBSOLETE LEGACY BALANCE TRIGGER
+-- ==============================================================================
+DROP TRIGGER IF EXISTS update_account_balance_trigger ON public.transactions;
+DROP FUNCTION IF EXISTS public.update_account_balance();
+
+-- DONE. All tables, categories view, storage security, double-entry ledger, and clean triggers are ready.
+

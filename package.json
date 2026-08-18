@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test test/financial-logic.test.ts test/ai-chat-reliability.test.ts"
+    "test": "node --experimental-strip-types --test test/financial-logic.test.ts test/ai-chat-reliability.test.ts test/security-hardening.test.ts test/task3c-security-hardening.test.ts test/ledger-foundation.test.ts test/ledger-migration.test.ts test/ledger-cutover.test.ts test/ledger-bypass-fix.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.44",
@@ -32,11 +32,14 @@
     "@supabase/supabase-js": "^2.112.3",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-table": "^9.1.2",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.2",
     "ai": "^7.0.66",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
+    "exceljs": "^4.4.0",
     "framer-motion": "^13.1.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
@@ -44,6 +47,7 @@
     "next": "^16.3.1",
     "next-themes": "^0.4.6",
     "nextjs-toploader": "^3.9.17",
+    "papaparse": "^5.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.85.0",
@@ -52,7 +56,6 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "web-push": "^3.6.7",
-    "xlsx": "^0.18.5",
     "zod": "^3.25.76",
     "zustand": "^5.0.15"
   },
@@ -60,6 +63,7 @@
     "@eslint/eslintrc": "^3.3.6",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/web-push": "^3.6.4",
@@ -68,5 +72,8 @@
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

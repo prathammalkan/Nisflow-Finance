@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/types/database';
 import Decimal from 'decimal.js';
+import { recordFinancialTransaction } from '@/lib/ledger/service';
 
 type Receivable = Database['public']['Tables']['receivables']['Row'] & { people: { name: string } | null };
 type ReceivableInsert = Database['public']['Tables']['receivables']['Insert'];
@@ -29,10 +30,48 @@ export function useCreateReceivable() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (receivable: ReceivableInsert) => {
+    mutationFn: async (receivable: ReceivableInsert & { account_id?: string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      let targetAccountId = receivable.account_id;
+      if (!targetAccountId) {
+        const { data: accounts } = await supabase.from('accounts').select('id').eq('is_active', true).limit(1);
+        if (accounts && accounts.length > 0) targetAccountId = (accounts[0] as any).id;
+      }
+
+      const counterpartyId = (receivable as any).person_id || receivable.counterparty_id;
+      const amountDec = new Decimal(receivable.amount || 0);
+
+      let journalEntryId: string | undefined;
+      if (targetAccountId && amountDec.gt(0) && counterpartyId) {
+        const ledgerRes = await recordFinancialTransaction(supabase as any, {
+          userId: userData.user.id,
+          type: 'lending',
+          accountId: targetAccountId,
+          counterpartyId,
+          amount: amountDec.toFixed(2),
+          date: receivable.due_date ? receivable.due_date.split('T')[0] : new Date().toISOString().split('T')[0],
+          description: receivable.notes || 'Money Lent (Receivable)',
+          idempotencyKey: `REC:LEND:${userData.user.id}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
+          sourceType: 'receivable',
+        });
+
+        if (!ledgerRes.success) {
+          throw new Error(ledgerRes.error || 'Failed to post lending transaction to ledger');
+        }
+        journalEntryId = ledgerRes.journalEntryId;
+      }
+
+      const payload = {
+        ...receivable,
+        user_id: userData.user.id,
+        notes: journalEntryId ? `${receivable.notes || ''} [Ledger: ${journalEntryId}]`.trim() : receivable.notes,
+      };
+
       const { data, error } = await supabase
         .from('receivables')
-        .insert(receivable as any)
+        .insert(payload as any)
         .select()
         .single();
         
@@ -41,6 +80,9 @@ export function useCreateReceivable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     }
   });
 }
@@ -50,7 +92,51 @@ export function useUpdateReceivable() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, ...update }: { id: string } & ReceivableUpdate) => {
+    mutationFn: async ({ id, ...update }: { id: string } & ReceivableUpdate & { account_id?: string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('receivables')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      // Check if repayment amount is recorded
+      const prevReceived = new Decimal((existing as any)?.received_amount || 0);
+      const newReceived = (update as any).received_amount !== undefined ? new Decimal((update as any).received_amount as any) : prevReceived;
+      const repaymentDelta = newReceived.minus(prevReceived);
+
+      if (repaymentDelta.gt(0)) {
+        let targetAccountId = update.account_id;
+        if (!targetAccountId) {
+          const { data: accounts } = await supabase.from('accounts').select('id').eq('is_active', true).limit(1);
+          if (accounts && accounts.length > 0) targetAccountId = (accounts[0] as any).id;
+        }
+
+        if (targetAccountId && (existing as any).counterparty_id) {
+          const ledgerRes = await recordFinancialTransaction(supabase as any, {
+            userId: userData.user.id,
+            type: 'repayment',
+            accountId: targetAccountId,
+            counterpartyId: (existing as any).counterparty_id,
+            amount: repaymentDelta.toFixed(2),
+            date: new Date().toISOString().split('T')[0],
+            description: `Repayment received for receivable ${id}`,
+            idempotencyKey: `REC:REPAY:${id}:${Date.now()}`,
+            sourceType: 'receivable_repayment',
+            sourceId: id,
+            metadata: { direction: 'in' },
+          });
+
+          if (!ledgerRes.success) {
+            throw new Error(ledgerRes.error || 'Failed to post repayment to ledger');
+          }
+        }
+      }
+
       const { data, error } = await supabase
         .from('receivables')
         .update(update as never)
@@ -63,6 +149,9 @@ export function useUpdateReceivable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     }
   });
 }

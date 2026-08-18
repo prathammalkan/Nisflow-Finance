@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/types/database';
 import Decimal from 'decimal.js';
 
+import { recordFinancialTransaction } from '@/lib/ledger/service';
+
 type Payable = Database['public']['Tables']['payables']['Row'] & { people: { name: string } | null };
 type PayableInsert = Database['public']['Tables']['payables']['Insert'];
 type PayableUpdate = Database['public']['Tables']['payables']['Update'];
@@ -29,10 +31,48 @@ export function useCreatePayable() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (payable: PayableInsert) => {
+    mutationFn: async (payable: PayableInsert & { account_id?: string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      let targetAccountId = payable.account_id;
+      if (!targetAccountId) {
+        const { data: accounts } = await supabase.from('accounts').select('id').eq('is_active', true).limit(1);
+        if (accounts && accounts.length > 0) targetAccountId = (accounts[0] as any).id;
+      }
+
+      const counterpartyId = (payable as any).person_id || payable.counterparty_id;
+      const amountDec = new Decimal(payable.amount || 0);
+
+      let journalEntryId: string | undefined;
+      if (targetAccountId && amountDec.gt(0) && counterpartyId) {
+        const ledgerRes = await recordFinancialTransaction(supabase as any, {
+          userId: userData.user.id,
+          type: 'borrowing',
+          accountId: targetAccountId,
+          counterpartyId,
+          amount: amountDec.toFixed(2),
+          date: payable.due_date ? payable.due_date.split('T')[0] : new Date().toISOString().split('T')[0],
+          description: payable.notes || 'Money Borrowed (Payable)',
+          idempotencyKey: `PAY:BORROW:${userData.user.id}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
+          sourceType: 'payable',
+        });
+
+        if (!ledgerRes.success) {
+          throw new Error(ledgerRes.error || 'Failed to post borrowing transaction to ledger');
+        }
+        journalEntryId = ledgerRes.journalEntryId;
+      }
+
+      const payload = {
+        ...payable,
+        user_id: userData.user.id,
+        notes: journalEntryId ? `${payable.notes || ''} [Ledger: ${journalEntryId}]`.trim() : payable.notes,
+      };
+
       const { data, error } = await supabase
         .from('payables')
-        .insert(payable as any)
+        .insert(payload as any)
         .select()
         .single();
         
@@ -41,6 +81,9 @@ export function useCreatePayable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payables'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     }
   });
 }
@@ -50,7 +93,51 @@ export function useUpdatePayable() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, ...update }: { id: string } & PayableUpdate) => {
+    mutationFn: async ({ id, ...update }: { id: string } & PayableUpdate & { account_id?: string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('payables')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      // Check if debt repayment amount is recorded
+      const prevPaid = new Decimal((existing as any)?.paid_amount || 0);
+      const newPaid = (update as any).paid_amount !== undefined ? new Decimal((update as any).paid_amount as any) : prevPaid;
+      const repaymentDelta = newPaid.minus(prevPaid);
+
+      if (repaymentDelta.gt(0)) {
+        let targetAccountId = update.account_id;
+        if (!targetAccountId) {
+          const { data: accounts } = await supabase.from('accounts').select('id').eq('is_active', true).limit(1);
+          if (accounts && accounts.length > 0) targetAccountId = (accounts[0] as any).id;
+        }
+
+        if (targetAccountId && (existing as any).counterparty_id) {
+          const ledgerRes = await recordFinancialTransaction(supabase as any, {
+            userId: userData.user.id,
+            type: 'repayment',
+            accountId: targetAccountId,
+            counterpartyId: (existing as any).counterparty_id,
+            amount: repaymentDelta.toFixed(2),
+            date: new Date().toISOString().split('T')[0],
+            description: `Repayment made for debt ${id}`,
+            idempotencyKey: `PAY:REPAY:${id}:${Date.now()}`,
+            sourceType: 'payable_repayment',
+            sourceId: id,
+            metadata: { direction: 'out', isDebtRepayment: true },
+          });
+
+          if (!ledgerRes.success) {
+            throw new Error(ledgerRes.error || 'Failed to post debt repayment to ledger');
+          }
+        }
+      }
+
       const { data, error } = await supabase
         .from('payables')
         .update(update as never)
@@ -63,6 +150,9 @@ export function useUpdatePayable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payables'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     }
   });
 }
