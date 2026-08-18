@@ -23,7 +23,10 @@ export async function POST(req: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return new Response('Unauthorized', { status: 401 });
+      return new Response(JSON.stringify({ error: 'Unauthorized. Please sign in.' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Rate limit: 20 AI requests per user per minute
@@ -36,12 +39,20 @@ export async function POST(req: Request) {
 
     const { messages } = await req.json();
     if (!messages || !Array.isArray(messages)) {
-      return new Response('Invalid request body', { status: 400 });
+      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
+
     // Limit message history to prevent prompt injection via large payloads
     if (messages.length > 20) {
-      return new Response(JSON.stringify({ error: 'Too many messages in history.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: 'Too many messages in history.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
+
     const sanitizedMessages = messages
       .map((m: any) => ({
         role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
@@ -181,10 +192,15 @@ STRICT SCOPE AND BEHAVIOR RULES:
       messages: sanitizedMessages,
     });
 
-    return result.toTextStreamResponse();
+    return result.toTextStreamResponse({
+      headers: {
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+      },
+    });
   } catch (error: any) {
     console.error('Chat API Error:', error);
-    return new Response(JSON.stringify({ error: error?.message || 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: error?.message || 'NisFlow AI is temporarily unavailable. Try again.' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

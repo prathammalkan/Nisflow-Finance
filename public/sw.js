@@ -24,11 +24,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Skip non-GET requests
+  // NEVER intercept non-GET requests (e.g. POST, PUT, DELETE, PATCH)
   if (event.request.method !== 'GET') return;
   
-  // Skip API calls and Supabase
-  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase.co')) return;
+  // NEVER cache or intercept API endpoints, auth endpoints, or Supabase backend requests
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/auth/') ||
+    url.hostname.includes('supabase.co')
+  ) {
+    return;
+  }
   
   // Network first for navigation (HTML pages)
   if (event.request.mode === 'navigate') {

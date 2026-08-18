@@ -16,61 +16,61 @@ export function NetWorthBreakdown() {
   const netWorth = safeNum(stats?.personalNetWorth);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-      <h2 className="text-xl font-bold mb-6 text-gray-900">What Do I Actually Have?</h2>
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <h2 className="text-lg sm:text-xl font-bold mb-6 text-foreground">What Do I Actually Have?</h2>
 
       {isLoading ? (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />
+            <div key={i} className="h-8 bg-muted/40 rounded animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <span className="text-gray-600">Personal Cash &amp; Liquid</span>
-            <span className="font-semibold text-gray-900">{formatINR(personalCash)}</span>
+        <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm">
+          <div className="flex justify-between items-center py-2 border-b border-border">
+            <span className="text-muted-foreground">Personal Cash &amp; Liquid</span>
+            <span className="font-semibold text-foreground">{formatINR(personalCash)}</span>
           </div>
           {savings.gt(0) && (
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Savings Accounts</span>
-              <span className="font-semibold text-gray-900">{formatINR(savings)}</span>
+            <div className="flex justify-between items-center py-2 border-b border-border">
+              <span className="text-muted-foreground">Savings Accounts</span>
+              <span className="font-semibold text-foreground">{formatINR(savings)}</span>
             </div>
           )}
           {investments.gt(0) && (
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Investments</span>
-              <span className="font-semibold text-gray-900">{formatINR(investments)}</span>
+            <div className="flex justify-between items-center py-2 border-b border-border">
+              <span className="text-muted-foreground">Investments</span>
+              <span className="font-semibold text-foreground">{formatINR(investments)}</span>
             </div>
           )}
           {receivables.gt(0) && (
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Receivables (money owed to me)</span>
-              <span className="font-semibold text-emerald-600">+{formatINR(receivables)}</span>
+            <div className="flex justify-between items-center py-2 border-b border-border">
+              <span className="text-muted-foreground">Receivables (money owed to me)</span>
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{formatINR(receivables)}</span>
             </div>
           )}
           {payables.gt(0) && (
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-600">Payables (I owe)</span>
-              <span className="font-semibold text-red-600">-{formatINR(payables)}</span>
+            <div className="flex justify-between items-center py-2 border-b border-border">
+              <span className="text-muted-foreground">Payables (I owe)</span>
+              <span className="font-semibold text-rose-600 dark:text-rose-400">-{formatINR(payables)}</span>
             </div>
           )}
           {thirdParty.gt(0) && (
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-gray-400">Third-Party Funds Held (Excluded from net worth)</span>
-              <span className="text-gray-400">{formatINR(thirdParty)}</span>
+            <div className="flex justify-between items-center py-2 border-b border-border">
+              <span className="text-muted-foreground/70">Third-Party Funds Held (Excluded from net worth)</span>
+              <span className="text-muted-foreground/70">{formatINR(thirdParty)}</span>
             </div>
           )}
 
           {stats?.totalAccounts === 0 ? (
-            <div className="flex justify-between items-center pt-4 mt-2 border-t-2 border-gray-100">
-              <span className="text-sm text-gray-400">Add an account to track your net worth.</span>
-              <span className="font-bold text-xl text-gray-300">₹0</span>
+            <div className="flex justify-between items-center pt-4 mt-2 border-t border-border">
+              <span className="text-xs text-muted-foreground">Add an account to track your net worth.</span>
+              <span className="font-bold text-lg text-muted-foreground">₹0</span>
             </div>
           ) : (
-            <div className="flex justify-between items-center pt-4 mt-2 border-t-2 border-gray-100">
-              <span className="font-bold text-lg text-gray-900">Actual Personal Net Worth</span>
-              <span className={`font-bold text-2xl ${netWorth.gte(0) ? 'text-blue-600' : 'text-red-600'}`}>
+            <div className="flex justify-between items-center pt-4 mt-2 border-t border-border">
+              <span className="font-bold text-base sm:text-lg text-foreground">Actual Personal Net Worth</span>
+              <span className={`font-bold text-xl sm:text-2xl ${netWorth.gte(0) ? 'text-primary' : 'text-rose-600'}`}>
                 {formatINR(netWorth)}
               </span>
             </div>

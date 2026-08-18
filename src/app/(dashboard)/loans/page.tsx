@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { LoanForm } from "@/components/loans/loan-form";
+import { AmortizationScheduleDialog } from "@/components/loans/amortization-schedule-dialog";
 import { formatINR } from "@/lib/finance/money";
 import { calculateEMI, generateAmortizationSchedule } from "@/lib/finance/loans";
 import { useLoans } from "@/lib/hooks/use-loans";
@@ -14,6 +15,7 @@ import { Loader2 } from "lucide-react";
 
 export default function LoansPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedLoanForSchedule, setSelectedLoanForSchedule] = useState<any | null>(null);
   const { data: loans, isLoading } = useLoans();
 
   return (
@@ -38,7 +40,7 @@ export default function LoansPage() {
         </Dialog>
       </PageHeader>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {isLoading && (
           <div className="col-span-full flex justify-center py-12 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading loans...
@@ -55,51 +57,66 @@ export default function LoansPage() {
           const totalInterest = schedule.reduce((sum, row) => sum + row.interestComponent.toNumber(), 0);
           
           return (
-            <Card key={loan.id} className="overflow-hidden">
-              <div className="bg-slate-900 h-2 w-full" />
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xl">{loan.name}</CardTitle>
-                <CardDescription>{loan.lender_name}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
+            <Card key={loan.id} className="overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div>
+                <div className="bg-slate-900 dark:bg-slate-100 h-1.5 w-full" />
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xl font-semibold">{loan.name}</CardTitle>
+                  <CardDescription className="capitalize">
+                    {loan.lender_name || "Direct"} • {(loan.loan_type || "Loan").toUpperCase()}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="flex justify-between items-end">
                     <div>
-                      <p className="text-sm text-muted-foreground">Monthly EMI</p>
-                      <p className="text-2xl font-bold">{formatINR(emi.toNumber())}</p>
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Monthly EMI</p>
+                      <p className="text-2xl font-bold text-foreground">{formatINR(emi.toNumber())}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Remaining</p>
-                      <p className="text-lg font-semibold">{formatINR(loan.remaining_principal)}</p>
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Remaining</p>
+                      <p className="text-base font-semibold text-foreground">{formatINR(loan.remaining_principal ?? loan.principal_amount)}</p>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-2 text-sm bg-muted/50 p-3 rounded-lg">
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 p-3 rounded-lg border">
                     <div>
                       <p className="text-muted-foreground">Interest Rate</p>
-                      <p className="font-medium">{loan.interest_rate}% p.a.</p>
+                      <p className="font-semibold text-foreground mt-0.5">{loan.interest_rate}% p.a.</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Tenure</p>
-                      <p className="font-medium">{loan.tenure_months} mos</p>
+                      <p className="font-semibold text-foreground mt-0.5">{loan.tenure_months} mos</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Total Interest</p>
-                      <p className="font-medium text-red-500">{formatINR(totalInterest)}</p>
+                      <p className="font-semibold text-rose-600 dark:text-rose-400 mt-0.5">{formatINR(totalInterest)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Start Date</p>
-                      <p className="font-medium">{new Date(loan.start_date).toLocaleDateString()}</p>
+                      <p className="font-semibold text-foreground mt-0.5">{loan.start_date ? new Date(loan.start_date).toLocaleDateString() : 'N/A'}</p>
                     </div>
                   </div>
-                  
-                  <Button variant="outline" className="w-full">View Amortization Schedule</Button>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+
+              <div className="p-6 pt-0">
+                <Button 
+                  variant="outline" 
+                  className="w-full text-xs font-semibold"
+                  onClick={() => setSelectedLoanForSchedule(loan)}
+                >
+                  View Amortization Schedule
+                </Button>
+              </div>
             </Card>
           );
         })}
       </div>
+
+      <AmortizationScheduleDialog
+        loan={selectedLoanForSchedule}
+        onClose={() => setSelectedLoanForSchedule(null)}
+      />
     </div>
   );
 }

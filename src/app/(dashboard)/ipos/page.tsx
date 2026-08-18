@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useIPOs } from '@/lib/hooks/use-ipos';
 import { formatINR } from '@/lib/finance/money';
 import { Button } from '@/components/ui/button';
-import { Plus, Filter } from 'lucide-react';
+import { Plus, ArrowUpRight } from 'lucide-react';
 import { IPOForm } from '@/components/ipos/ipo-form';
 import Decimal from 'decimal.js';
 
@@ -14,99 +14,158 @@ export default function IPOsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [filter, setFilter] = useState('All');
 
-  if (isLoading) return <div className="p-8">Loading IPOs...</div>;
+  if (isLoading) return <div className="p-8 text-muted-foreground">Loading IPOs...</div>;
 
-  const filteredIPOs = ipos?.filter(ipo => filter === 'All' || ipo.status === filter) || [];
-  
-  // Calculate summaries
-  const summary = filteredIPOs.reduce((acc, ipo) => {
-    const apps = ipo.applications || [];
-    acc.activeIPOs += ['Upcoming', 'Open'].includes(ipo.status) ? 1 : 0;
-    acc.totalApplied = acc.totalApplied.plus(apps.reduce((sum: Decimal, app: any) => sum.plus(new Decimal(app.amount || 0)), new Decimal(0)));
-    acc.totalAllotted = acc.totalAllotted.plus(apps.filter((a: any) => a.status === 'Allotted').reduce((sum: Decimal, app: any) => sum.plus(new Decimal(app.amount || 0)), new Decimal(0)));
-    acc.pendingRefunds = acc.pendingRefunds.plus(apps.filter((a: any) => a.status === 'Refund Pending').reduce((sum: Decimal, app: any) => sum.plus(new Decimal(app.amount || 0)), new Decimal(0)));
-    return acc;
-  }, {
-    activeIPOs: 0,
-    totalApplied: new Decimal(0),
-    totalAllotted: new Decimal(0),
-    pendingRefunds: new Decimal(0)
-  });
+  const filteredIPOs = ipos?.filter((ipo) => filter === 'All' || ipo.status === filter) || [];
+
+  // Calculate summaries across applications
+  const summary = filteredIPOs.reduce(
+    (acc, ipo) => {
+      const apps = ipo.applications || [];
+      acc.activeIPOs += ['Upcoming', 'Open'].includes(ipo.status) ? 1 : 0;
+      
+      apps.forEach((app: any) => {
+        const appAmt = new Decimal(app.application_amount ?? app.amount ?? 0);
+        acc.totalApplied = acc.totalApplied.plus(appAmt);
+
+        if (app.status === 'Allotted' || app.status === 'Sold / Listed') {
+          const debited = new Decimal(app.amount_debited || appAmt);
+          acc.totalAllotted = acc.totalAllotted.plus(debited);
+        }
+        if (app.status === 'Refund Pending' || (app.status === 'Not Allotted' && !app.refund_amount)) {
+          const refund = new Decimal(app.refund_amount || appAmt);
+          acc.pendingRefunds = acc.pendingRefunds.plus(refund);
+        }
+      });
+
+      return acc;
+    },
+    {
+      activeIPOs: 0,
+      totalApplied: new Decimal(0),
+      totalAllotted: new Decimal(0),
+      pendingRefunds: new Decimal(0),
+    }
+  );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">IPO Management</h1>
-        <Button onClick={() => setIsFormOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Add IPO
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">IPO Management</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Track IPO applications, mandates, allotments, refunds, and listing gains.
+          </p>
+        </div>
+        <Button onClick={() => setIsFormOpen(true)} className="gap-2 font-semibold">
+          <Plus className="h-4 w-4" /> Add IPO
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <p className="text-sm text-slate-500">Active IPOs</p>
-          <p className="text-2xl font-bold">{summary.activeIPOs}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-card p-4 rounded-xl border border-border">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active IPOs</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground mt-1">{summary.activeIPOs}</p>
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <p className="text-sm text-slate-500">Total Applied</p>
-          <p className="text-2xl font-bold">{formatINR(summary.totalApplied.toNumber())}</p>
+        <div className="bg-card p-4 rounded-xl border border-border">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Applied</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground mt-1">{formatINR(summary.totalApplied.toNumber())}</p>
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <p className="text-sm text-slate-500">Total Allotted</p>
-          <p className="text-2xl font-bold text-green-600">{formatINR(summary.totalAllotted.toNumber())}</p>
+        <div className="bg-card p-4 rounded-xl border border-border">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Allotted</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+            {formatINR(summary.totalAllotted.toNumber())}
+          </p>
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-          <p className="text-sm text-slate-500">Pending Refunds</p>
-          <p className="text-2xl font-bold text-orange-600">{formatINR(summary.pendingRefunds.toNumber())}</p>
+        <div className="bg-card p-4 rounded-xl border border-border">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pending Refunds</p>
+          <p className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+            {formatINR(summary.pendingRefunds.toNumber())}
+          </p>
         </div>
       </div>
 
-      <div className="flex gap-2">
-        {['All', 'Upcoming', 'Open', 'Closed', 'Listed'].map(s => (
-          <Button key={s} variant={filter === s ? 'default' : 'outline'} size="sm" onClick={() => setFilter(s)}>
+      <div className="flex gap-2 flex-wrap">
+        {['All', 'Upcoming', 'Open', 'Closed', 'Allotted', 'Listed'].map((s) => (
+          <Button
+            key={s}
+            variant={filter === s ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setFilter(s)}
+          >
             {s}
           </Button>
         ))}
       </div>
 
       {filteredIPOs.length === 0 ? (
-        <div className="text-center p-12 bg-white rounded-xl border border-dashed border-slate-300">
-          <p className="text-slate-500">No IPOs found.</p>
+        <div className="text-center p-12 bg-card rounded-xl border border-dashed border-border">
+          <p className="text-muted-foreground">No IPOs found in this category.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredIPOs.map(ipo => {
+          {filteredIPOs.map((ipo) => {
             const apps = ipo.applications || [];
-            const amountApplied = apps.reduce((sum: Decimal, app: any) => sum.plus(new Decimal(app.amount || 0)), new Decimal(0)).toNumber();
+            const amountApplied = apps.reduce(
+              (sum: Decimal, app: any) => sum.plus(new Decimal(app.application_amount ?? app.amount ?? 0)),
+              new Decimal(0)
+            ).toNumber();
+
+            const company = ipo.company || ipo.company_name || 'Public Company';
+
             return (
-              <Link key={ipo.id} href={`/ipos/${ipo.id}`}>
-                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-semibold text-lg">{ipo.name}</h3>
-                      <p className="text-sm text-slate-500">{ipo.company_name}</p>
+              <Link key={ipo.id} href={`/ipos/${ipo.id}`} className="group">
+                <div className="bg-card p-5 rounded-xl border border-border hover:border-primary/50 hover:shadow-md transition-all h-full flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors flex items-center gap-1">
+                          {ipo.name}
+                          <ArrowUpRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </h3>
+                        <p className="text-xs text-muted-foreground">{company}</p>
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                          ipo.status === 'Open'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : ipo.status === 'Listed'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {ipo.status}
+                      </span>
                     </div>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      ipo.status === 'Open' ? 'bg-green-100 text-green-800' :
-                      ipo.status === 'Listed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-slate-100 text-slate-800'
-                    }`}>
-                      {ipo.status}
-                    </span>
+
+                    <div className="space-y-2 text-xs text-muted-foreground border-t pt-3">
+                      <div className="flex justify-between">
+                        <span>Price Band:</span>
+                        <span className="font-medium text-foreground">
+                          {formatINR(ipo.price_band_low || 0)} - {formatINR(ipo.price_band_high || 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Lot Size:</span>
+                        <span className="font-medium text-foreground">{ipo.lot_size || 1} shares</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Open & Close:</span>
+                        <span className="font-medium text-foreground">
+                          {ipo.open_date ? new Date(ipo.open_date).toLocaleDateString() : 'N/A'} -{' '}
+                          {ipo.close_date ? new Date(ipo.close_date).toLocaleDateString() : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Applications:</span>
+                        <span className="font-medium text-foreground">{apps.length} applied</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Dates</span>
-                      <span>{new Date(ipo.open_date).toLocaleDateString()} - {new Date(ipo.close_date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Applications</span>
-                      <span>{apps.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Amount Applied</span>
-                      <span className="font-medium">{formatINR(amountApplied)}</span>
-                    </div>
+
+                  <div className="mt-4 pt-3 border-t flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground font-medium">Total Applied:</span>
+                    <span className="font-bold text-foreground text-sm">{formatINR(amountApplied)}</span>
                   </div>
                 </div>
               </Link>
@@ -115,9 +174,7 @@ export default function IPOsPage() {
         </div>
       )}
 
-      {isFormOpen && (
-        <IPOForm onClose={() => setIsFormOpen(false)} />
-      )}
+      {isFormOpen && <IPOForm onClose={() => setIsFormOpen(false)} />}
     </div>
   );
 }

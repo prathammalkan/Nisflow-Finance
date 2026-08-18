@@ -30,20 +30,20 @@ export function FinancialHealth() {
   ];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-      <h2 className="text-xl font-bold mb-6 text-gray-900">Financial Health</h2>
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <h2 className="text-lg sm:text-xl font-bold mb-6 text-foreground">Financial Health</h2>
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="p-4 border border-gray-100 rounded-lg bg-gray-50 h-16 animate-pulse" />
+            <div key={i} className="p-4 border border-border rounded-lg bg-muted/40 h-16 animate-pulse" />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {metrics.map(({ label, value }) => (
-            <div key={label} className="p-4 border border-gray-100 rounded-lg bg-gray-50 flex flex-col gap-1 hover:border-gray-200 transition-colors">
-              <div className="text-xs font-medium text-gray-500">{label}</div>
-              <div className="text-lg font-bold text-gray-900">{value}</div>
+            <div key={label} className="p-4 border border-border rounded-lg bg-muted/20 flex flex-col gap-1 hover:border-border/80 transition-colors">
+              <div className="text-xs font-medium text-muted-foreground">{label}</div>
+              <div className="text-base sm:text-lg font-bold text-foreground">{value}</div>
             </div>
           ))}
         </div>

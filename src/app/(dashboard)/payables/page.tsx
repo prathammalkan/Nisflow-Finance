@@ -57,7 +57,7 @@ export default function PayablesPage() {
                 const remaining = amount.minus(paid);
                 
                 return (
-                  <tr key={item.id} className="bg-white border-b hover:bg-muted/20">
+                  <tr key={item.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                     <td className="px-6 py-4 font-medium">{item.people?.name || 'Unknown'}</td>
                     <td className="px-6 py-4">{item.reason || '-'}</td>
                     <td className="px-6 py-4 text-right">{formatINR(item.amount)}</td>

@@ -15,13 +15,11 @@ import {
   Mic,
   MicOff,
   CheckCircle2,
-  ArrowDownRight,
-  ArrowUpRight,
-  ArrowRightLeft,
   Users,
   Wallet,
   Calendar,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
@@ -37,6 +35,7 @@ interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  isError?: boolean;
 }
 
 interface ParsedAction {
@@ -72,7 +71,7 @@ function extractActionAndText(content: string): { cleanText: string; action: Par
   try {
     const action = JSON.parse(rawJson) as ParsedAction;
     return { cleanText, action };
-  } catch (e) {
+  } catch {
     return { cleanText, action: null };
   }
 }
@@ -82,13 +81,13 @@ export function CompanionDrawer() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [actionStatuses, setActionStatuses] = useState<Record<string, 'pending' | 'success' | 'dismissed'>>({});
   const [isExecutingAction, setIsExecutingAction] = useState<Record<string, boolean>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
   const { data: accounts } = useAccounts();
   const { data: people } = usePeople();
@@ -98,16 +97,21 @@ export function CompanionDrawer() {
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    if (open) {
+      scrollToBottom();
+    }
+  }, [messages, open, scrollToBottom]);
 
-  // Clean up speech recognition on unmount
+  // Clean up speech recognition & active fetches on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
         } catch (_) {}
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
   }, []);
@@ -155,7 +159,9 @@ export function CompanionDrawer() {
         console.warn('Speech recognition error:', event.error);
         setIsListening(false);
         if (event.error === 'not-allowed') {
-          toast.error('Microphone permission was denied. Please allow microphone access.');
+          toast.error('Microphone permission was denied. Please allow microphone access in your browser.');
+        } else if (event.error !== 'no-speech') {
+          toast.error('Voice recognition error. Please try typing instead.');
         }
       };
 
@@ -183,7 +189,6 @@ export function CompanionDrawer() {
       setIsListening(false);
     }
 
-    setError(null);
     setInput('');
 
     const userMessage: ChatMessage = {
@@ -193,19 +198,28 @@ export function CompanionDrawer() {
     };
 
     const assistantMessageId = `assistant-${Date.now()}`;
-    const newMessages = [...messages, userMessage];
+    const newMessages = [...messages.filter((m) => !m.isError), userMessage];
 
-    // Optimistically show user message and empty assistant message
+    // Optimistically add user message and pending assistant message
     setMessages([
       ...newMessages,
       { id: assistantMessageId, role: 'assistant', content: '' },
     ]);
     setIsLoading(true);
 
+    // Setup 35s timeout abort controller
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const timeoutId = setTimeout(() => {
+      controller.abort('timeout');
+    }, 35000);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        signal: controller.signal,
         body: JSON.stringify({
           messages: newMessages.map((m) => ({
             role: m.role,
@@ -214,13 +228,24 @@ export function CompanionDrawer() {
         }),
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server responded with ${response.status}`);
+        let errorMessage = 'NisFlow AI is temporarily unavailable. Try again.';
+        if (response.status === 401) {
+          errorMessage = 'Session expired. Please sign in again.';
+          toast.error('Authentication session expired');
+        } else if (response.status === 429) {
+          errorMessage = 'Too many requests. Please wait a moment before asking again.';
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.error) errorMessage = errorData.error;
+        }
+        throw new Error(errorMessage);
       }
 
       if (!response.body) {
-        throw new Error('No response body received from server.');
+        throw new Error('No response received from server.');
       }
 
       const reader = response.body.getReader();
@@ -243,11 +268,34 @@ export function CompanionDrawer() {
         );
       }
     } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error('Chat error:', err);
-      setError(err?.message || 'Failed to get a response. Please try again.');
-      setMessages((prev) => prev.filter((msg) => msg.id !== assistantMessageId));
+
+      let userFacingError = 'NisFlow AI is temporarily unavailable. Try again.';
+      if (err.name === 'AbortError' || err === 'timeout') {
+        userFacingError = 'The request took too long. Check your connection and try again.';
+      } else if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch'))) {
+        userFacingError = "NisFlow AI couldn't connect. Check your internet connection and try again.";
+      } else if (err.message) {
+        userFacingError = err.message;
+      }
+
+      // Display the error inline without deleting the bubble
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                content: userFacingError,
+                isError: true,
+              }
+            : msg
+        )
+      );
+      toast.error(userFacingError);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -257,7 +305,7 @@ export function CompanionDrawer() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User is not authenticated');
+      if (!user) throw new Error('User is not authenticated. Please sign in again.');
 
       if (action.actionType === 'payable' || action.actionType === 'receivable') {
         let counterpartyId = action.personId;
@@ -380,29 +428,28 @@ export function CompanionDrawer() {
 
   const handleClearChat = () => {
     setMessages([]);
-    setError(null);
     setActionStatuses({});
   };
 
   return (
     <>
-      {/* Floating trigger button — clears bottom nav on mobile */}
+      {/* Floating trigger button — adjusted to sit above mobile bottom nav */}
       <Button
         size="icon"
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 md:bottom-6 md:right-6 h-13 w-13 rounded-full shadow-xl z-50 bg-primary hover:bg-primary/90"
+        className="fixed bottom-20 right-4 md:bottom-6 md:right-6 h-12 w-12 rounded-full shadow-lg z-40 bg-primary hover:bg-primary/90 text-primary-foreground"
         aria-label="Open AI Finance Assistant"
       >
-        <Sparkles className="h-5 w-5 text-primary-foreground" />
+        <Sparkles className="h-5 w-5" />
       </Button>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="right"
-          className="w-full sm:max-w-md flex flex-col p-0 border-l h-full"
+          className="w-full sm:max-w-md flex flex-col p-0 border-l h-[100dvh] max-h-[100dvh]"
         >
-          <SheetHeader className="px-4 py-3 border-b flex-row items-center justify-between space-y-0">
-            <SheetTitle className="flex items-center gap-2 text-base">
+          <SheetHeader className="px-4 py-3 border-b flex-row items-center justify-between space-y-0 shrink-0">
+            <SheetTitle className="flex items-center gap-2 text-sm sm:text-base font-semibold">
               <Sparkles className="h-4 w-4 text-primary" />
               NisFlow Finance AI
             </SheetTitle>
@@ -429,10 +476,10 @@ export function CompanionDrawer() {
             </div>
           </SheetHeader>
 
-          {/* Messages area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Messages scrollable area */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-5">
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-4">
                 <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                   <Bot className="h-6 w-6 text-primary" />
                 </div>
@@ -442,12 +489,12 @@ export function CompanionDrawer() {
                     Ask about your finances, or use voice/text to log expenses, income, borrowings & lent money.
                   </p>
                 </div>
-                <div className="w-full space-y-2">
+                <div className="w-full space-y-2 max-w-sm">
                   {SUGGESTIONS.map((s) => (
                     <button
                       key={s}
                       onClick={() => handleSuggestion(s)}
-                      className="w-full text-left text-xs px-3 py-2.5 rounded-lg border bg-muted/50 hover:bg-muted transition-colors text-foreground"
+                      className="w-full text-left text-xs px-3 py-2.5 rounded-lg border border-border bg-muted/40 hover:bg-muted transition-colors text-foreground"
                     >
                       {s}
                     </button>
@@ -459,6 +506,28 @@ export function CompanionDrawer() {
                 const { cleanText, action } = extractActionAndText(m.content);
                 const actionStatus = actionStatuses[m.id] || 'pending';
                 const isExecuting = isExecutingAction[m.id] || false;
+
+                if (m.isError) {
+                  return (
+                    <div key={m.id} className="w-full p-3 text-xs bg-destructive/10 text-destructive rounded-xl border border-destructive/20 space-y-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span>{m.content}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1 border-destructive/30 hover:bg-destructive/10 text-destructive"
+                        onClick={() => {
+                          const lastUser = [...messages].reverse().find((msg) => msg.role === 'user');
+                          if (lastUser) sendMessage(lastUser.content);
+                        }}
+                      >
+                        <RotateCcw className="h-3 w-3" /> Retry
+                      </Button>
+                    </div>
+                  );
+                }
 
                 return (
                   <div
@@ -505,7 +574,7 @@ export function CompanionDrawer() {
 
                     {/* Proposed Action Card (if action detected) */}
                     {action && (
-                      <div className="w-full mt-1 rounded-xl border bg-card text-card-foreground p-3 shadow-sm space-y-3">
+                      <div className="w-full mt-1 rounded-xl border border-border bg-card text-card-foreground p-3 shadow-sm space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             {action.actionType === 'payable' ? (
@@ -557,7 +626,7 @@ export function CompanionDrawer() {
 
                         {/* Action Card Controls */}
                         {actionStatus === 'pending' ? (
-                          <div className="flex items-center gap-2 pt-1 border-t">
+                          <div className="flex items-center gap-2 pt-1 border-t border-border">
                             <Button
                               size="sm"
                               className="flex-1 h-8 text-xs font-medium"
@@ -587,12 +656,12 @@ export function CompanionDrawer() {
                             </Button>
                           </div>
                         ) : actionStatus === 'success' ? (
-                          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-1 border-t">
+                          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-1 border-t border-border">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Successfully recorded into your database!
                           </div>
                         ) : (
-                          <div className="text-xs text-muted-foreground italic pt-1 border-t">
+                          <div className="text-xs text-muted-foreground italic pt-1 border-t border-border">
                             Action dismissed.
                           </div>
                         )}
@@ -603,18 +672,12 @@ export function CompanionDrawer() {
               })
             )}
 
-            {error && (
-              <div className="p-3 text-xs bg-destructive/10 text-destructive rounded-lg border border-destructive/20 text-center">
-                {error}
-              </div>
-            )}
-
             <div ref={messagesEndRef} />
           </div>
 
           {/* Listening Indicator */}
           {isListening && (
-            <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20 flex items-center justify-between text-xs text-destructive animate-pulse">
+            <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20 flex items-center justify-between text-xs text-destructive animate-pulse shrink-0">
               <div className="flex items-center gap-2 font-medium">
                 <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
                 Listening to your voice… speak now
@@ -629,8 +692,11 @@ export function CompanionDrawer() {
             </div>
           )}
 
-          {/* Input area */}
-          <div className="p-3 border-t bg-background">
+          {/* Input area with safe-area padding for mobile */}
+          <div
+            className="p-3 border-t border-border bg-background shrink-0"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}
+          >
             <form onSubmit={handleFormSubmit} className="flex items-center gap-1.5">
               <Input
                 value={input}
@@ -685,4 +751,3 @@ export function CompanionDrawer() {
     </>
   );
 }
-
