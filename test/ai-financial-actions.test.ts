@@ -64,7 +64,12 @@ function createMockSupabase(initialData: {
           return builder;
         },
         in: (col: string, vals: any[]) => {
-          filters.push((row: any) => vals.includes(row[col]));
+          filters.push((row: any) => {
+            const rowVal = col.includes('.')
+              ? col.split('.').reduce((acc, p) => acc?.[p], row)
+              : row[col];
+            return vals.includes(rowVal);
+          });
           return builder;
         },
         ilike: (col: string, pattern: string) => {

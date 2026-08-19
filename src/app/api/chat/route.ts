@@ -8,7 +8,6 @@ import {
   getPersonLedgerHistory,
 } from '@/lib/ledger/people';
 import { getLoanAuthoritativeBalance } from '@/lib/ledger/loans';
-import { getAuthoritativeDashboardStats } from '@/lib/ledger/analytics';
 
 export async function POST(req: Request) {
   try {
@@ -71,30 +70,55 @@ export async function POST(req: Request) {
       }))
       .filter((m) => m.content.trim().length > 0);
 
-    // Fetch live user financial context
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const tContextStart = performance.now();
 
+    // Fetch live user financial context concurrently (Authoritative Double-Entry Ledger Source of Truth)
     const [
       { data: accounts },
       { data: counterparties },
       { data: loans },
       { data: holdings },
       { data: recentTransactions },
-      authStats,
+      { data: ledgerAccounts },
+      { data: journalLines },
     ] = await Promise.all([
       // Hardened Context: Fetch bounded subsets with minimal required fields (Least-Privilege context)
-      supabase.from('accounts').select('id, name, type').eq('user_id', user.id).eq('is_active', true).limit(50),
+      supabase.from('accounts').select('id, name, type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
       supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
       supabase.from('loans').select('id, name, type, loan_amount').eq('user_id', user.id).limit(20),
       supabase.from('holdings').select('id, symbol, name, quantity, average_buy_price').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
-      getAuthoritativeDashboardStats(supabase as any, user.id, startOfMonth, now.toISOString()).catch(() => null),
+      supabase.from('ledger_accounts').select('id, account_type, entity_type, entity_id').eq('user_id', user.id),
+      supabase.from('journal_lines').select(`
+        ledger_account_id,
+        debit_amount,
+        credit_amount,
+        journal_entries!inner (status)
+      `).eq('user_id', user.id).eq('journal_entries.status', 'posted'),
     ]);
+
+    // 1. Build authoritative ledger account balance map from journal lines
+    const ledgerBalanceMap = new Map<string, Decimal>();
+    for (const line of (journalLines as any[]) || []) {
+      const accId = line.ledger_account_id;
+      const netDelta = new Decimal(line.debit_amount || 0).minus(new Decimal(line.credit_amount || 0));
+      const current = ledgerBalanceMap.get(accId) || new Decimal(0);
+      ledgerBalanceMap.set(accId, current.plus(netDelta));
+    }
+
+    // 2. Map account entity IDs to authoritative ledger balances
+    const entityLedgerMap = new Map<string, Decimal>();
+    for (const la of (ledgerAccounts as any[]) || []) {
+      if (la.entity_type === 'account' && la.entity_id) {
+        const netDebit = ledgerBalanceMap.get(la.id) || new Decimal(0);
+        const authBalance = la.account_type === 'asset' ? netDebit : netDebit.negated();
+        entityLedgerMap.set(la.entity_id, authBalance);
+      }
+    }
 
     const lastUserMsg = [...sanitizedMessages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() || '';
 
-    // 1. Least-Privilege Person Scoping
+    // 3. Least-Privilege Person Scoping (Only fetch detailed ledger history when user mentions person)
     const cpList: Array<{ id: string; name: string }> = (counterparties as any) || [];
     const matchedPerson = cpList.find((p) =>
       p.name && lastUserMsg.includes(p.name.toLowerCase())
@@ -128,7 +152,7 @@ ${recentLines}
       }
     }
 
-    // 2. Least-Privilege Loan Scoping
+    // 4. Least-Privilege Loan Scoping (Only fetch loan ledger balance when loan/emi is mentioned)
     const loanList: Array<{ id: string; name: string; type: string }> = (loans as any) || [];
     const matchedLoan = loanList.find((l) =>
       l.name && (lastUserMsg.includes(l.name.toLowerCase()) || lastUserMsg.includes('loan') || lastUserMsg.includes('emi'))
@@ -151,7 +175,7 @@ TARGET LOAN LEDGER CONTEXT (Authoritative Double-Entry from Ledger):
       }
     }
 
-    // 3. Least-Privilege Investment Scoping
+    // 5. Least-Privilege Investment Scoping
     const holdingList: Array<{ id: string; symbol: string; name: string; quantity: number; average_buy_price: number }> = (holdings as any) || [];
     const matchedHolding = holdingList.find((h) =>
       (h.symbol && lastUserMsg.includes(h.symbol.toLowerCase())) ||
@@ -168,26 +192,38 @@ TARGET INVESTMENT HOLDING CONTEXT:
 `;
     }
 
-    const accountsList = (accounts || []).map((acc: any) => {
-      return `- ${acc.name} (Type: ${acc.type}, ID: ${acc.id})`;
-    }).join('\n') || 'No active accounts found.';
+    // Compute Authoritative Total Cash, Investments, and Net Worth exclusively from Ledger
+    let totalCash = new Decimal(0);
+    let totalInvestments = new Decimal(0);
+    const accRows: Array<{ id: string; name: string; type?: string; balance?: number; current_balance?: number }> = (accounts as any) || [];
+    const accountsListFormatted: string[] = [];
+
+    for (const acc of accRows) {
+      const authBal = entityLedgerMap.has(acc.id)
+        ? entityLedgerMap.get(acc.id)!
+        : new Decimal(acc.current_balance ?? acc.balance ?? 0);
+
+      if (acc.type === 'investment') {
+        totalInvestments = totalInvestments.plus(authBal);
+      } else {
+        totalCash = totalCash.plus(authBal);
+      }
+
+      accountsListFormatted.push(`- ${acc.name} (Type: ${acc.type}, Balance: ₹${authBal.toFixed(2)}, ID: ${acc.id})`);
+    }
+
+    const netWorth = totalCash.plus(totalInvestments);
+    const accountsList = accountsListFormatted.join('\n') || 'No active accounts found.';
 
     const peopleList = matchedPerson
       ? `- ${matchedPerson.name} (ID: ${matchedPerson.id}) [Target of inquiry]`
       : cpList.slice(0, 15).map((p) => `- ${p.name} (ID: ${p.id})`).join('\n') || 'No counterparties recorded yet.';
 
-    const totalCash = new Decimal(authStats?.availablePersonalCash || 0);
-    const totalInvestments = new Decimal(authStats?.totalInvestments || 0);
-    const monthIncome = new Decimal(authStats?.thisMonthIncome || 0);
-    const monthExpenses = new Decimal(authStats?.thisMonthExpenses || 0);
-    const totalReceivables = new Decimal(authStats?.totalReceivables || 0);
-    const totalPayables = new Decimal(authStats?.totalPayables || 0);
-    const netWorth = new Decimal(authStats?.personalNetWorth || 0);
-
     const recentTxList = (recentTransactions || []).map((tx: any) => 
       `- ${tx.date?.substring(0, 10)}: ${tx.direction === 'in' ? '+' : '-'}₹${tx.amount} (${tx.type || 'transaction'}) "${tx.description || 'No description'}"`
     ).join('\n') || 'No recent transactions recorded.';
 
+    const now = new Date();
     const todayDate = now.toISOString().split('T')[0];
 
     const systemPrompt = `You are NisFlow, a strictly finance-only AI companion built into the NisFlow Finance app.
@@ -200,11 +236,6 @@ CURRENT USER LIVE FINANCIAL DATA (Real-time from double-entry ledger):
 - Total Net Worth: ₹${netWorth.toFixed(2)}
 - Available Liquid Cash: ₹${totalCash.toFixed(2)}
 - Total Investments: ₹${totalInvestments.toFixed(2)}
-- This Month Income: ₹${monthIncome.toFixed(2)}
-- This Month Expenses: ₹${monthExpenses.toFixed(2)}
-- Net Monthly Cashflow: ₹${monthIncome.minus(monthExpenses).toFixed(2)}
-- Total Receivables (Money owed to user): ₹${totalReceivables.toFixed(2)}
-- Total Payables (Money user owes): ₹${totalPayables.toFixed(2)}
 ${personSpecificContext}${loanSpecificContext}${holdingSpecificContext}
 User Accounts:
 ${accountsList}
@@ -288,15 +319,19 @@ STRICT SCOPE AND BEHAVIOR RULES:
       model: googleProvider('gemini-3.6-flash'),
       system: systemPrompt,
       messages: sanitizedMessages,
+      maxRetries: 0,
       onError: ({ error }) => {
         console.error('[NisFlow AI Stream Error]:', error);
       },
     });
 
+    const contextDuration = Math.round(performance.now() - tContextStart);
+
     return result.toTextStreamResponse({
       headers: {
         'Cache-Control': 'no-cache, no-transform',
         'X-Accel-Buffering': 'no',
+        'Server-Timing': `context;dur=${contextDuration}`,
       },
     });
   } catch (error: any) {

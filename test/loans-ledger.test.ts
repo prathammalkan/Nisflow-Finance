@@ -70,7 +70,17 @@ function createMockSupabase(initialState: {
           return builder;
         },
         in: (col: string, vals: any[]) => {
-          filters.push((r: any) => vals.includes(r[col]));
+          filters.push((r: any) => {
+            if (col.includes('.')) {
+              const parts = col.split('.');
+              let curr = r;
+              for (const p of parts) {
+                curr = curr?.[p];
+              }
+              return vals.includes(curr);
+            }
+            return vals.includes(r[col]);
+          });
           return builder;
         },
         order: (col: string, opts?: { ascending?: boolean }) => {

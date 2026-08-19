@@ -91,7 +91,12 @@ function createMockSupabase(initialState: {
           return builder;
         },
         in: (col: string, vals: any[]) => {
-          filters.push((r: any) => vals.includes(r[col]));
+          filters.push((r: any) => {
+            const rowVal = col.includes('.')
+              ? col.split('.').reduce((acc, p) => acc?.[p], r)
+              : r[col];
+            return vals.includes(rowVal);
+          });
           return builder;
         },
         gte: (col: string, val: any) => {
