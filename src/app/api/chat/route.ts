@@ -247,10 +247,41 @@ Recent Transactions:
 ${recentTxList}
 
 RECORDING DATA & ACTIONS:
-When the user states that they spent, received, borrowed, lent money, paid loan EMI, bought/sold investments, or want to reverse an entry (e.g., "Paid ₹350 for lunch from Kotak", "Borrowed ₹5,000 from Rahul", "Lent ₹2,000 to Amit", "Paid EMI ₹15,000 for Car Loan", "Got ₹3,000 repayment from Rohit"), you must:
+When the user states that they spent, received, borrowed, lent money, paid loan EMI, bought/sold investments, or want to reverse an entry (e.g., "Paid ₹350 for lunch from Kotak", "Borrowed ₹5,000 from Rahul", "Lent ₹2,000 to Amit", "Paid EMI ₹15,000 for Car Loan", "Got ₹3,000 repayment from Rohit", "Invest ₹46,000 in Bajaj IPO from Bob account"), you must:
 1. Provide a short, friendly conversational message confirming what you prepared for review (1-2 sentences).
 CRITICAL: Do NOT claim that you have already recorded, posted, or saved the transaction. Clearly state that you have prepared the transaction details for the user to review and confirm below (e.g., "I've prepared a ₹1,000.00 deposit from Papa into your Bob account. Please review and confirm below.").
-2. At the end of your message, output a strict JSON action block enclosed in [ACTION] and [/ACTION] tags.
+2. At the end of your message, output a strict JSON action block enclosed in [ACTION] and [/ACTION] tags UNLESS a required prerequisite account is missing or ambiguous.
+
+CRITICAL INVESTMENT BUY & SELL RULES:
+For "investment_buy" (e.g., "Invest ₹46,000 in Bajaj IPO from Bob account", "Buy 10 shares of RELIANCE for ₹25,000 from HDFC"):
+1. Distinguish between FUNDING ACCOUNT (bank/cash account paying money) and INVESTMENT/DEMAT ACCOUNT (account holding the security/shares/IPO).
+2. Inspect the User Accounts list above for active accounts with (Type: investment).
+3. If there are ZERO active accounts with (Type: investment):
+   - DO NOT generate an [ACTION] block.
+   - Respond conversationally: "An active investment/demat account is required before this investment can be recorded. Please create or link an investment account (such as Zerodha, Groww, or your Demat account) in Accounts first."
+4. If there is EXACTLY ONE active account with (Type: investment):
+   - Populate "accountId" with funding bank ID, "accountName" with funding bank name, "holdingAccountId" with the investment account ID, "holdingAccountName" with the investment account name, "assetSymbol" with the security/IPO name (e.g., "Bajaj IPO"), and "amount" with the purchase amount.
+5. If there are MULTIPLE active accounts with (Type: investment) (e.g., Zerodha and Groww) and the user did NOT specify which one to use:
+   - DO NOT guess or invent an ID. DO NOT generate an [ACTION] block.
+   - Ask the user: "Which investment account should receive this asset? (e.g. Zerodha or Groww?)"
+6. FAMILY / THIRD-PARTY TRANSFERS FOR INVESTMENTS (e.g., "Send ₹46,000 from Bob to Papa so Papa can apply for Bajaj IPO from Papa's demat"):
+   - Do NOT assume this is a direct personal investment BUY for the user.
+   - DO NOT generate an investment_buy action block.
+   - Ask the user to clarify whether this transfer to the person is:
+     A. A gift / personal transfer to the person
+     B. A loan / receivable to be repaid by the person
+     C. Money held by the person on your behalf
+     D. Your beneficial investment through their demat account
+
+7. SPECIFIC FAMILY MONEY FLOW INTENTS:
+   - GIFT (e.g., "Send ₹46,000 to Papa as a gift for his IPO"):
+     Classify as "expense" (gift/transfer out), NOT "investment_buy".
+   - LOAN TO FAMILY (e.g., "Send ₹46,000 to Papa. He will apply for IPO and repay me later"):
+     Classify as "lending" (receivable from Papa), NOT "investment_buy".
+   - BENEFICIAL OWNERSHIP (e.g., "Send ₹46,000 to Papa to apply from his demat, but shares belong to me"):
+     Explain that NisFlow currently supports personal demat holdings directly. Ask if they want to record this as a loan/receivable to Papa or a personal transfer, without fabricating third-party demat ownership.
+   - MULTI-CONTRIBUTOR INVESTMENTS (e.g., "Investing ₹1,00,000: ₹40k from me, ₹30k from Papa, ₹30k from Mummy"):
+     Explain that multi-party pooled contributions must be recorded as separate economic events (e.g., personal investment portion + incoming family transfers/loans). Do NOT collapse into an arbitrary single transaction.
 
 Action Block Schema:
 [ACTION]
@@ -259,8 +290,10 @@ Action Block Schema:
   "actionId": "<stable action slug, e.g. act-1>",
   "amount": <number>,
   "description": "<string summary>",
-  "accountName": "<matched or mentioned account name>",
-  "accountId": "<matched account ID from list above if found>",
+  "accountName": "<funding bank/cash account name>",
+  "accountId": "<funding bank/cash account ID from list above if found>",
+  "holdingAccountName": "<investment/demat account name for investment_buy/sell>",
+  "holdingAccountId": "<investment/demat account ID from list above if found>",
   "toAccountName": "<destination account name for transfer>",
   "toAccountId": "<destination account ID for transfer>",
   "personName": "<person name if mentioned>",
@@ -269,7 +302,9 @@ Action Block Schema:
   "loanId": "<matched loan ID if found>",
   "principalAmount": <number for EMI principal portion>,
   "interestAmount": <number for EMI interest portion>,
-  "assetSymbol": "<stock/fund symbol if investment>",
+  "assetSymbol": "<stock/fund/IPO symbol or name if investment>",
+  "quantity": <optional number of units/shares>,
+  "pricePerUnit": <optional price per unit>,
   "date": "${todayDate}",
   "notes": "<optional additional context>"
 }
@@ -284,7 +319,7 @@ Classification Guide:
 - "receivable_repayment": someone repaid money to user (e.g. "Amit repaid 2000")
 - "payable_repayment": user paid back debt to someone (e.g. "repaid 5000 to Rahul")
 - "loan_emi": user paid EMI for bank loan (e.g. "paid 15000 car loan EMI")
-- "investment_buy": user bought stock/mutual fund (e.g. "bought 10 shares of RELIANCE for 25000")
+- "investment_buy": user bought stock/mutual fund/IPO (e.g. "bought 10 shares of RELIANCE for 25000")
 - "investment_sell": user sold stock/mutual fund (e.g. "sold 5 shares of TCS for 18000")
 - "investment_dividend": dividend payout received (e.g. "received 500 dividend from INFY")
 - "reversal": corrective reversal of an erroneous entry

@@ -53,6 +53,7 @@ export interface AIFinancialActionPayload {
   quantity?: number | string;
   pricePerUnit?: number | string;
   holdingAccountId?: string;
+  holdingAccountName?: string;
   costBasis?: number | string;
   realizedGainLoss?: number | string;
 
@@ -104,24 +105,14 @@ export async function executeAIFinancialAction(
 
     if (action.actionType !== 'reversal') {
       if (decAmount.lte(0)) {
-        return {
-          success: false,
-          actionType: action.actionType,
-          message: 'Invalid amount',
-          error: 'Financial transaction amount must be strictly greater than ₹0.00',
-        };
+        return { success: false, actionType: action.actionType, message: 'Invalid amount', error: 'Action amount must be strictly greater than ₹0.00' };
       }
       if (decAmount.decimalPlaces() > 2) {
-        return {
-          success: false,
-          actionType: action.actionType,
-          message: 'Invalid precision',
-          error: 'Amount exceeds INR 2-decimal paise precision',
-        };
+        return { success: false, actionType: action.actionType, message: 'Invalid precision', error: 'Amount exceeds INR 2-decimal paise precision' };
       }
     }
 
-    // 3. Resolve Source Account
+    // 3. Resolve & Verify Source Account (if applicable)
     let sourceAccountId = action.accountId;
     if (!sourceAccountId && action.accountName) {
       const { data: matchedAcc } = await (supabase.from('accounts') as any)
@@ -135,23 +126,9 @@ export async function executeAIFinancialAction(
       if (matchedAcc) sourceAccountId = matchedAcc.id;
     }
 
-    // Fallback to primary active account if not specified
-    if (!sourceAccountId && !['reversal'].includes(action.actionType)) {
-      const { data: defaultAcc } = await (supabase.from('accounts') as any)
-        .select('id, user_id')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (defaultAcc) sourceAccountId = defaultAcc.id;
-    }
-
-    // Verify Source Account Ownership
     if (sourceAccountId) {
       const { data: ownedAcc } = await (supabase.from('accounts') as any)
-        .select('id, user_id')
+        .select('id, user_id, is_active, type')
         .eq('id', sourceAccountId)
         .eq('user_id', userId)
         .maybeSingle();
@@ -161,43 +138,37 @@ export async function executeAIFinancialAction(
           success: false,
           actionType: action.actionType,
           message: 'Account security violation',
-          error: `Security Violation: Source account ${sourceAccountId} does not belong to authenticated user.`,
+          error: `Security Violation: Account ${sourceAccountId} does not belong to authenticated user.`,
         };
       }
     }
 
-    // 4. Resolve Counterparty / Person if required
+    // 4. Resolve & Verify Person / Counterparty (if applicable)
     let counterpartyId = action.personId;
     if (!counterpartyId && action.personName) {
-      const { data: existingCp } = await (supabase.from('counterparties') as any)
+      const { data: matchedCp } = await (supabase.from('counterparties') as any)
         .select('id, user_id')
         .eq('user_id', userId)
-        .ilike('name', action.personName.trim())
+        .ilike('name', `%${action.personName}%`)
         .limit(1)
         .maybeSingle();
 
-      if (existingCp) {
-        counterpartyId = existingCp.id;
-      } else if (['lending', 'borrowing', 'receivable_repayment', 'payable_repayment'].includes(action.actionType)) {
-        // Create counterparty under authenticated user
-        const { data: createdCp, error: cpCreateErr } = await (supabase.from('counterparties') as any)
+      if (matchedCp) {
+        counterpartyId = matchedCp.id;
+      } else {
+        // Auto-provision new counterparty for user
+        const { data: createdCp } = await (supabase.from('counterparties') as any)
           .insert({
             user_id: userId,
-            name: action.personName.trim(),
-            type: 'Other',
+            name: action.personName,
+            status: 'active',
           })
           .select('id')
           .single();
 
-        if (cpCreateErr || !createdCp) {
-          return {
-            success: false,
-            actionType: action.actionType,
-            message: 'Counterparty creation failed',
-            error: cpCreateErr?.message || 'Could not provision counterparty',
-          };
+        if (createdCp) {
+          counterpartyId = createdCp.id;
         }
-        counterpartyId = createdCp.id;
       }
     }
 
@@ -364,68 +335,68 @@ export async function executeAIFinancialAction(
           return { success: false, actionType: action.actionType, message: 'Account required', error: 'An active account is required to receive repayment.' };
         }
         if (!counterpartyId) {
-          return { success: false, actionType: action.actionType, message: 'Person required', error: 'Counterparty is required for repayment.' };
+          return { success: false, actionType: action.actionType, message: 'Person required', error: 'Person / Counterparty is required to record repayment.' };
         }
 
-        const repayRes = await recordRepayment(supabase, {
+        const recRes = await recordRepayment(supabase, {
           userId,
           accountId: sourceAccountId,
           counterpartyId,
           amount: decAmount.toFixed(2),
-          direction: 'in',
+          direction: 'in', // Money coming in from debtor
           date: txnDate,
           description: action.description || `Repayment received from ${action.personName || 'person'}`,
           notes: action.notes,
-          repaymentId: action.repaymentId || `ai-repay-in-${messageId}-${stableActionId}`,
+          repaymentId: action.repaymentId || `ai-rep-in-${messageId}-${stableActionId}`,
         });
 
-        if (!repayRes.success) {
-          return { success: false, actionType: action.actionType, message: 'Repayment failed', error: repayRes.error };
+        if (!recRes.success) {
+          return { success: false, actionType: action.actionType, message: 'Repayment recording failed', error: recRes.error };
         }
 
         return {
           success: true,
-          journalEntryId: repayRes.journalEntryId,
+          journalEntryId: recRes.journalEntryId,
           actionType: action.actionType,
-          message: `Recorded ₹${decAmount.toFixed(2)} receivable repayment in People Ledger.`,
+          message: `Recorded repayment of ₹${decAmount.toFixed(2)} received from ${action.personName || 'counterparty'}.`,
         };
       }
 
       case 'payable_repayment': {
         if (!sourceAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Account required', error: 'An active account is required to pay debt.' };
+          return { success: false, actionType: action.actionType, message: 'Account required', error: 'An active account is required to pay repayment.' };
         }
         if (!counterpartyId) {
-          return { success: false, actionType: action.actionType, message: 'Person required', error: 'Counterparty is required for debt repayment.' };
+          return { success: false, actionType: action.actionType, message: 'Person required', error: 'Person / Creditor is required to record debt repayment.' };
         }
 
-        const repayRes = await recordRepayment(supabase, {
+        const payRes = await recordRepayment(supabase, {
           userId,
           accountId: sourceAccountId,
           counterpartyId,
           amount: decAmount.toFixed(2),
-          direction: 'out',
+          direction: 'out', // Money going out to creditor
           date: txnDate,
-          description: action.description || `Debt repayment paid to ${action.personName || 'person'}`,
+          description: action.description || `Debt repayment to ${action.personName || 'person'}`,
           notes: action.notes,
-          repaymentId: action.repaymentId || `ai-repay-out-${messageId}-${stableActionId}`,
+          repaymentId: action.repaymentId || `ai-rep-out-${messageId}-${stableActionId}`,
         });
 
-        if (!repayRes.success) {
-          return { success: false, actionType: action.actionType, message: 'Debt repayment failed', error: repayRes.error };
+        if (!payRes.success) {
+          return { success: false, actionType: action.actionType, message: 'Debt repayment failed', error: payRes.error };
         }
 
         return {
           success: true,
-          journalEntryId: repayRes.journalEntryId,
+          journalEntryId: payRes.journalEntryId,
           actionType: action.actionType,
-          message: `Recorded ₹${decAmount.toFixed(2)} payable repayment in People Ledger.`,
+          message: `Recorded debt repayment of ₹${decAmount.toFixed(2)} to ${action.personName || 'creditor'}.`,
         };
       }
 
       case 'loan_emi': {
         if (!sourceAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Account required', error: 'An active account is required to pay loan EMI.' };
+          return { success: false, actionType: action.actionType, message: 'Account required', error: 'Source bank account is required for EMI payment.' };
         }
 
         let loanId = action.loanId;
@@ -496,30 +467,94 @@ export async function executeAIFinancialAction(
 
       case 'investment_buy': {
         if (!sourceAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Source account required', error: 'Funding bank/cash account required for investment purchase.' };
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: 'Funding bank or cash account is required to record investment purchase.',
+          };
         }
 
+        // 1. Validate Funding Account
+        const { data: fundingAcc } = await (supabase.from('accounts') as any)
+          .select('id, user_id, name, type, is_active')
+          .eq('id', sourceAccountId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!fundingAcc) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Funding account security violation',
+            error: `Security Violation: Funding account ${sourceAccountId} does not belong to authenticated user.`,
+          };
+        }
+
+        if (!fundingAcc.is_active) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: `Funding account '${fundingAcc.name}' is inactive. Please select an active bank or cash account.`,
+          };
+        }
+
+        if (fundingAcc.type?.toLowerCase() === 'investment') {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: 'Funding source cannot be an investment/demat account. Please select a bank or cash account to fund the purchase.',
+          };
+        }
+
+        // 2. Resolve Investment / Demat Holding Account
         let invAccountId = action.holdingAccountId;
-        if (!invAccountId) {
-          // Find investment account
-          const { data: invAcc } = await (supabase.from('accounts') as any)
-            .select('id, user_id')
+        if (!invAccountId && action.holdingAccountName) {
+          const { data: matchedInv } = await (supabase.from('accounts') as any)
+            .select('id, user_id, name, type, is_active')
             .eq('user_id', userId)
             .eq('type', 'investment')
+            .ilike('name', `%${action.holdingAccountName}%`)
             .eq('is_active', true)
             .limit(1)
             .maybeSingle();
 
-          if (invAcc) invAccountId = invAcc.id;
+          if (matchedInv) invAccountId = matchedInv.id;
         }
 
         if (!invAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Investment account required', error: 'An active investment account is required for buying assets.' };
+          const { data: allInvAccs } = await (supabase.from('accounts') as any)
+            .select('id, user_id, name, type, is_active')
+            .eq('user_id', userId)
+            .eq('type', 'investment')
+            .eq('is_active', true);
+
+          if (!allInvAccs || allInvAccs.length === 0) {
+            return {
+              success: false,
+              actionType: action.actionType,
+              message: 'Action needs information',
+              error: 'An active investment/demat account is required before this investment can be recorded. Please create or select an investment account in Accounts.',
+            };
+          }
+
+          if (allInvAccs.length === 1) {
+            invAccountId = allInvAccs[0].id;
+          } else {
+            return {
+              success: false,
+              actionType: action.actionType,
+              message: 'Action needs information',
+              error: `Multiple investment accounts found (${allInvAccs.map((a: any) => a.name).join(', ')}). Please specify which investment account should receive this asset.`,
+            };
+          }
         }
 
-        // Verify Investment Account Ownership
+        // 3. Verify Investment Account Ownership & Status
         const { data: ownedInvAcc } = await (supabase.from('accounts') as any)
-          .select('id, user_id')
+          .select('id, user_id, name, type, is_active')
           .eq('id', invAccountId)
           .eq('user_id', userId)
           .maybeSingle();
@@ -533,6 +568,26 @@ export async function executeAIFinancialAction(
           };
         }
 
+        if (!ownedInvAcc.is_active) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: `Investment account '${ownedInvAcc.name}' is inactive. Please activate it or select an active demat account.`,
+          };
+        }
+
+        if (ownedInvAcc.id === sourceAccountId) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: 'Funding bank account and investment holding account cannot be the same account.',
+          };
+        }
+
+        const assetIdent = action.assetSymbol || action.assetName || action.description || 'Investment Asset';
+
         const res = await recordFinancialTransaction(supabase, {
           userId,
           type: 'investment_purchase',
@@ -540,13 +595,14 @@ export async function executeAIFinancialAction(
           toAccountId: invAccountId,
           amount: decAmount.toFixed(2),
           date: txnDate,
-          description: action.description || `Buy ${action.assetSymbol || action.assetName || 'Investment'}`,
+          description: action.description || `Invest in ${assetIdent}`,
           notes: action.notes,
           metadata: {
-            assetSymbol: action.assetSymbol,
-            assetName: action.assetName,
+            assetSymbol: action.assetSymbol || assetIdent,
+            assetName: action.assetName || assetIdent,
             quantity: action.quantity,
             pricePerUnit: action.pricePerUnit,
+            investmentAccountId: invAccountId,
           },
           idempotencyKey,
           sourceType: 'investment_purchase',
@@ -560,35 +616,82 @@ export async function executeAIFinancialAction(
           success: true,
           journalEntryId: res.journalEntryId,
           actionType: action.actionType,
-          message: `Recorded purchase of ${action.assetSymbol || 'investment'} (₹${decAmount.toFixed(2)}) in Investment Ledger.`,
+          message: `Recorded purchase of ${assetIdent} (₹${decAmount.toFixed(2)}) in Investment Ledger.`,
         };
       }
 
       case 'investment_sell': {
         if (!sourceAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Destination account required', error: 'Destination bank/cash account required for investment proceeds.' };
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: 'Destination bank/cash account required for investment proceeds.',
+          };
         }
 
+        // 1. Validate Destination Account
+        const { data: destAcc } = await (supabase.from('accounts') as any)
+          .select('id, user_id, name, type, is_active')
+          .eq('id', sourceAccountId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!destAcc) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Destination account security violation',
+            error: `Security Violation: Destination account ${sourceAccountId} does not belong to authenticated user.`,
+          };
+        }
+
+        // 2. Resolve Investment Account
         let invAccountId = action.holdingAccountId;
-        if (!invAccountId) {
-          const { data: invAcc } = await (supabase.from('accounts') as any)
-            .select('id, user_id')
+        if (!invAccountId && action.holdingAccountName) {
+          const { data: matchedInv } = await (supabase.from('accounts') as any)
+            .select('id, user_id, name, type, is_active')
             .eq('user_id', userId)
             .eq('type', 'investment')
+            .ilike('name', `%${action.holdingAccountName}%`)
             .eq('is_active', true)
             .limit(1)
             .maybeSingle();
 
-          if (invAcc) invAccountId = invAcc.id;
+          if (matchedInv) invAccountId = matchedInv.id;
         }
 
         if (!invAccountId) {
-          return { success: false, actionType: action.actionType, message: 'Investment account required', error: 'An active investment account is required for selling assets.' };
+          const { data: allInvAccs } = await (supabase.from('accounts') as any)
+            .select('id, user_id, name, type, is_active')
+            .eq('user_id', userId)
+            .eq('type', 'investment')
+            .eq('is_active', true);
+
+          if (!allInvAccs || allInvAccs.length === 0) {
+            return {
+              success: false,
+              actionType: action.actionType,
+              message: 'Action needs information',
+              error: 'An active investment account is required for selling assets.',
+            };
+          }
+
+          if (allInvAccs.length === 1) {
+            invAccountId = allInvAccs[0].id;
+          } else {
+            return {
+              success: false,
+              actionType: action.actionType,
+              message: 'Action needs information',
+              error: `Multiple investment accounts found (${allInvAccs.map((a: any) => a.name).join(', ')}). Please specify which investment account to sell from.`,
+            };
+          }
         }
 
-        // Verify Investment Account Ownership
+        // 3. Verify Investment Account Ownership
         const { data: ownedInvAcc } = await (supabase.from('accounts') as any)
-          .select('id, user_id')
+          .select('id, user_id, name, type, is_active')
           .eq('id', invAccountId)
           .eq('user_id', userId)
           .maybeSingle();
@@ -602,25 +705,36 @@ export async function executeAIFinancialAction(
           };
         }
 
+        if (!ownedInvAcc.is_active) {
+          return {
+            success: false,
+            actionType: action.actionType,
+            message: 'Action needs information',
+            error: `Investment account '${ownedInvAcc.name}' is inactive.`,
+          };
+        }
+
         const costBasis = action.costBasis !== undefined ? new Decimal(action.costBasis).toFixed(2) : decAmount.toFixed(2);
         const realizedGain = action.realizedGainLoss !== undefined ? new Decimal(action.realizedGainLoss).toFixed(2) : '0.00';
+        const assetIdent = action.assetSymbol || action.assetName || action.description || 'Investment Asset';
 
         const res = await recordFinancialTransaction(supabase, {
           userId,
           type: 'investment_sale',
-          accountId: invAccountId, // Dr Bank, Cr Investment
+          accountId: invAccountId!, // Dr Bank, Cr Investment
           toAccountId: sourceAccountId,
           amount: decAmount.toFixed(2),
           date: txnDate,
-          description: action.description || `Sell ${action.assetSymbol || action.assetName || 'Investment'}`,
+          description: action.description || `Sell ${assetIdent}`,
           notes: action.notes,
           metadata: {
-            assetSymbol: action.assetSymbol,
-            assetName: action.assetName,
+            assetSymbol: action.assetSymbol || assetIdent,
+            assetName: action.assetName || assetIdent,
             quantity: action.quantity,
             pricePerUnit: action.pricePerUnit,
             costBasis,
             realizedGainLoss: realizedGain,
+            investmentAccountId: invAccountId,
           },
           idempotencyKey,
           sourceType: 'investment_sale',
@@ -634,7 +748,7 @@ export async function executeAIFinancialAction(
           success: true,
           journalEntryId: res.journalEntryId,
           actionType: action.actionType,
-          message: `Recorded sale of ${action.assetSymbol || 'investment'} (₹${decAmount.toFixed(2)}) in Investment Ledger.`,
+          message: `Recorded sale of ${assetIdent} (₹${decAmount.toFixed(2)}) in Investment Ledger.`,
         };
       }
 

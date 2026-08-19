@@ -84,6 +84,7 @@ function normalizeActionPayload(raw: any): AIFinancialActionPayload | null {
     quantity: raw.quantity,
     pricePerUnit: raw.pricePerUnit,
     holdingAccountId: raw.holdingAccountId,
+    holdingAccountName: raw.holdingAccountName,
     costBasis: raw.costBasis,
     realizedGainLoss: raw.realizedGainLoss,
     originalJournalEntryId: raw.originalJournalEntryId,
@@ -615,7 +616,13 @@ export function CompanionDrawer() {
                           {action.accountName && (
                             <div className="flex items-center gap-1">
                               <Wallet className="h-3 w-3 text-muted-foreground" />
-                              <span>Account: <strong className="text-foreground">{action.accountName}</strong></span>
+                              <span>{action.actionType === 'investment_buy' || action.actionType === 'investment_sell' ? 'Funding Bank: ' : 'Account: '}<strong className="text-foreground">{action.accountName}</strong></span>
+                            </div>
+                          )}
+                          {(action.holdingAccountName || action.holdingAccountId) && (
+                            <div className="flex items-center gap-1">
+                              <Landmark className="h-3 w-3 text-muted-foreground" />
+                              <span>Investment/Demat: <strong className="text-foreground">{action.holdingAccountName || 'Investment Account'}</strong></span>
                             </div>
                           )}
                           {action.loanName && (
@@ -624,10 +631,10 @@ export function CompanionDrawer() {
                               <span>Loan: <strong className="text-foreground">{action.loanName}</strong></span>
                             </div>
                           )}
-                          {action.assetSymbol && (
+                          {(action.assetSymbol || action.assetName) && (
                             <div className="flex items-center gap-1">
                               <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                              <span>Asset: <strong className="text-foreground">{action.assetSymbol}</strong></span>
+                              <span>Asset/Security: <strong className="text-foreground">{action.assetSymbol || action.assetName}</strong></span>
                             </div>
                           )}
                           {action.date && (
@@ -638,10 +645,27 @@ export function CompanionDrawer() {
                           )}
                         </div>
 
-                        {/* Error state if mutation failed */}
+                        {/* Error or Prerequisite state */}
                         {actionStatus === 'pending' && actionErrors[m.id] && (
-                          <div className="p-2 rounded-lg bg-destructive/10 text-destructive text-xs border border-destructive/20 space-y-0.5">
-                            <p className="font-semibold">⚠️ Entry was NOT recorded</p>
+                          <div
+                            className={cn(
+                              'p-2 rounded-lg text-xs border space-y-0.5',
+                              actionErrors[m.id].toLowerCase().includes('information') ||
+                              actionErrors[m.id].toLowerCase().includes('required') ||
+                              actionErrors[m.id].toLowerCase().includes('specify') ||
+                              actionErrors[m.id].toLowerCase().includes('inactive')
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                : 'bg-destructive/10 text-destructive border-destructive/20'
+                            )}
+                          >
+                            <p className="font-semibold">
+                              {actionErrors[m.id].toLowerCase().includes('information') ||
+                              actionErrors[m.id].toLowerCase().includes('required') ||
+                              actionErrors[m.id].toLowerCase().includes('specify') ||
+                              actionErrors[m.id].toLowerCase().includes('inactive')
+                                ? 'ℹ️ Action needs information'
+                                : '⚠️ Entry was NOT recorded'}
+                            </p>
                             <p className="text-[11px] opacity-90">{actionErrors[m.id]}</p>
                           </div>
                         )}

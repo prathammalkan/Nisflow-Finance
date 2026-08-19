@@ -1008,3 +1008,322 @@ test('28. Exhaustive UUID Safety: Non-UUID sentinels are strictly normalized acr
     assert.equal(isValidUUID(la.entity_id), true, `Ledger account ${la.code} must have a valid UUID entity_id, got: ${la.entity_id}`);
   }
 });
+
+test('29. Investment BUY: ZERO active investment accounts returns prerequisite error ("Action needs information")', async () => {
+  const userId = 'user-inv-0';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: fundingAccId, user_id: userId, name: 'Bob Bank', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-no-inv', {
+    actionType: 'investment_buy',
+    actionId: 'act-buy-0',
+    amount: '46000.00',
+    accountId: fundingAccId,
+    assetSymbol: 'Bajaj IPO',
+  });
+
+  assert.equal(res.success, false);
+  assert.equal(res.message, 'Action needs information');
+  assert.match(res.error || '', /active investment\/demat account is required/);
+  assert.equal(supabase._store.journal_entries.length, 0);
+});
+
+test('30. Investment BUY: EXACTLY ONE active investment account resolves automatically and posts balanced Dr Investment / Cr Bank', async () => {
+  const userId = 'user-inv-1';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const dematAccId = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingAccId, user_id: userId, name: 'Bob Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: dematAccId, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-buy-single', {
+    actionType: 'investment_buy',
+    actionId: 'act-buy-1',
+    amount: '46000.00',
+    accountId: fundingAccId,
+    assetSymbol: 'Bajaj IPO',
+  });
+
+  assert.equal(res.success, true);
+  assert.ok(res.journalEntryId);
+  assert.equal(supabase._store.journal_entries.length, 1);
+  assert.equal(supabase._store.journal_lines.length, 2);
+
+  // Verify balanced double-entry
+  const lines = supabase._store.journal_lines;
+  const drLine = lines.find(l => new Decimal(l.debit_amount).gt(0));
+  const crLine = lines.find(l => new Decimal(l.credit_amount).gt(0));
+  assert.ok(drLine && crLine);
+  assert.equal(new Decimal(drLine.debit_amount).toFixed(2), '46000.00');
+  assert.equal(new Decimal(crLine.credit_amount).toFixed(2), '46000.00');
+});
+
+test('31. Investment BUY: MULTIPLE active investment accounts without target specified returns prerequisite notice', async () => {
+  const userId = 'user-inv-multi';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const demat1 = '22222222-2222-4222-a222-222222222222';
+  const demat2 = '33333333-3333-4333-a333-333333333333';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingAccId, user_id: userId, name: 'Bob Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: demat1, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+      { id: demat2, user_id: userId, name: 'Groww Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-buy-multi', {
+    actionType: 'investment_buy',
+    actionId: 'act-buy-m',
+    amount: '46000.00',
+    accountId: fundingAccId,
+    assetSymbol: 'Bajaj IPO',
+  });
+
+  assert.equal(res.success, false);
+  assert.equal(res.message, 'Action needs information');
+  assert.match(res.error || '', /Multiple investment accounts found/);
+  assert.equal(supabase._store.journal_entries.length, 0);
+});
+
+test('32. Investment BUY: MULTIPLE active accounts with target specified by name succeeds cleanly', async () => {
+  const userId = 'user-inv-multi-named';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const demat1 = '22222222-2222-4222-a222-222222222222';
+  const demat2 = '33333333-3333-4333-a333-333333333333';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingAccId, user_id: userId, name: 'Bob Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: demat1, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+      { id: demat2, user_id: userId, name: 'Groww Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-buy-named', {
+    actionType: 'investment_buy',
+    actionId: 'act-buy-named-1',
+    amount: '25000.00',
+    accountId: fundingAccId,
+    holdingAccountName: 'Groww',
+    assetSymbol: 'RELIANCE',
+  });
+
+  assert.equal(res.success, true);
+  assert.ok(res.journalEntryId);
+  assert.equal(supabase._store.journal_entries.length, 1);
+});
+
+test('33. Investment BUY: INACTIVE investment account is rejected with prerequisite notice', async () => {
+  const userId = 'user-inv-inactive';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const dematInactive = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingAccId, user_id: userId, name: 'Bob Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: dematInactive, user_id: userId, name: 'Old Inactive Demat', type: 'investment', ownership: 'personal', is_active: false },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-inactive-inv', {
+    actionType: 'investment_buy',
+    actionId: 'act-inactive',
+    amount: '10000.00',
+    accountId: fundingAccId,
+    holdingAccountId: dematInactive,
+    assetSymbol: 'TCS',
+  });
+
+  assert.equal(res.success, false);
+  assert.equal(res.message, 'Action needs information');
+  assert.match(res.error || '', /inactive/);
+});
+
+test('34. Investment BUY: INACTIVE funding bank account is rejected with prerequisite notice', async () => {
+  const userId = 'user-funding-inactive';
+  const fundingInactive = '11111111-1111-4111-a111-111111111111';
+  const dematActive = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingInactive, user_id: userId, name: 'Frozen Bank', type: 'bank', ownership: 'personal', is_active: false },
+      { id: dematActive, user_id: userId, name: 'Active Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-funding-inact', {
+    actionType: 'investment_buy',
+    actionId: 'act-fund-inact',
+    amount: '10000.00',
+    accountId: fundingInactive,
+    holdingAccountId: dematActive,
+    assetSymbol: 'INFY',
+  });
+
+  assert.equal(res.success, false);
+  assert.equal(res.message, 'Action needs information');
+  assert.match(res.error || '', /inactive/);
+});
+
+test('35. Cross-User Security: Foreign investment demat account is rejected', async () => {
+  const userId = 'user-attacker';
+  const victimId = 'user-victim';
+  const fundingAccId = '11111111-1111-4111-a111-111111111111';
+  const foreignDemat = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: fundingAccId, user_id: userId, name: 'Attacker Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: foreignDemat, user_id: victimId, name: 'Victim Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-cross-demat', {
+    actionType: 'investment_buy',
+    actionId: 'act-cross-demat',
+    amount: '50000.00',
+    accountId: fundingAccId,
+    holdingAccountId: foreignDemat,
+    assetSymbol: 'HDFC',
+  });
+
+  assert.equal(res.success, false);
+  assert.match(res.error || '', /Security Violation/);
+});
+
+test('36. Cross-User Security: Foreign funding bank account is rejected', async () => {
+  const userId = 'user-attacker';
+  const victimId = 'user-victim';
+  const foreignBank = '11111111-1111-4111-a111-111111111111';
+  const dematActive = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: foreignBank, user_id: victimId, name: 'Victim Bank', type: 'bank', ownership: 'personal', is_active: true },
+      { id: dematActive, user_id: userId, name: 'Attacker Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-cross-bank', {
+    actionType: 'investment_buy',
+    actionId: 'act-cross-bank',
+    amount: '50000.00',
+    accountId: foreignBank,
+    holdingAccountId: dematActive,
+    assetSymbol: 'HDFC',
+  });
+
+  assert.equal(res.success, false);
+  assert.match(res.error || '', /Security Violation/);
+});
+
+test('37. Personal IPO BUY: Posts balanced Dr ₹46,000.00 / Cr ₹46,000.00', async () => {
+  const userId = 'user-ipo';
+  const bobBank = '11111111-1111-4111-a111-111111111111';
+  const zerodhaDemat = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: bobBank, user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true },
+      { id: zerodhaDemat, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-ipo-1', {
+    actionType: 'investment_buy',
+    actionId: 'act-ipo-1',
+    amount: '46000.00',
+    accountId: bobBank,
+    holdingAccountId: zerodhaDemat,
+    assetSymbol: 'Bajaj Housing Finance IPO',
+    description: 'Invest in Bajaj IPO from Bob account',
+  });
+
+  assert.equal(res.success, true);
+  assert.ok(res.journalEntryId);
+
+  const lines = supabase._store.journal_lines;
+  assert.equal(lines.length, 2);
+  const totalDebit = lines.reduce((acc, l) => acc.plus(l.debit_amount || 0), new Decimal(0));
+  const totalCredit = lines.reduce((acc, l) => acc.plus(l.credit_amount || 0), new Decimal(0));
+  assert.equal(totalDebit.toFixed(2), '46000.00');
+  assert.equal(totalCredit.toFixed(2), '46000.00');
+});
+
+test('38. Investment BUY Idempotency: Retrying confirmation returns identical journal entry', async () => {
+  const userId = 'user-ipo-idemp';
+  const bobBank = '11111111-1111-4111-a111-111111111111';
+  const zerodhaDemat = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: bobBank, user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true },
+      { id: zerodhaDemat, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const payload = {
+    actionType: 'investment_buy' as const,
+    actionId: 'act-idemp-ipo',
+    amount: '46000.00',
+    accountId: bobBank,
+    holdingAccountId: zerodhaDemat,
+    assetSymbol: 'Bajaj IPO',
+  };
+
+  const res1 = await executeAIFinancialAction(supabase, userId, 'msg-idemp-1', payload);
+  const res2 = await executeAIFinancialAction(supabase, userId, 'msg-idemp-1', payload);
+
+  assert.equal(res1.success, true);
+  assert.equal(res2.success, true);
+  assert.equal(res1.journalEntryId, res2.journalEntryId);
+  assert.equal(supabase._store.journal_entries.length, 1);
+});
+
+test('39. Investment BUY Reversal: Reversing an investment purchase creates inverted offsetting lines', async () => {
+  const userId = 'user-ipo-rev';
+  const bobBank = '11111111-1111-4111-a111-111111111111';
+  const zerodhaDemat = '22222222-2222-4222-a222-222222222222';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [
+      { id: bobBank, user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true },
+      { id: zerodhaDemat, user_id: userId, name: 'Zerodha Demat', type: 'investment', ownership: 'personal', is_active: true },
+    ],
+  });
+
+  const buyRes = await executeAIFinancialAction(supabase, userId, 'msg-buy-orig', {
+    actionType: 'investment_buy',
+    actionId: 'act-orig',
+    amount: '46000.00',
+    accountId: bobBank,
+    holdingAccountId: zerodhaDemat,
+    assetSymbol: 'Bajaj IPO',
+  });
+
+  assert.equal(buyRes.success, true);
+  assert.ok(buyRes.journalEntryId);
+
+  const revRes = await executeAIFinancialAction(supabase, userId, 'msg-rev-1', {
+    actionType: 'reversal',
+    actionId: 'act-rev',
+    originalJournalEntryId: buyRes.journalEntryId,
+    reversalReason: 'Accidental IPO application',
+  });
+
+  assert.equal(revRes.success, true);
+  assert.ok(revRes.reversalEntryId);
+
+  // Verify journal entries and inverted lines
+  assert.equal(supabase._store.journal_entries.length, 2);
+  const origEntry = supabase._store.journal_entries.find(e => e.id === buyRes.journalEntryId);
+  assert.equal(origEntry.status, 'reversed');
+});
