@@ -296,50 +296,75 @@ STRICT SCOPE AND BEHAVIOR RULES:
 3. If the user is only asking a question (e.g. "What is my balance?", "How much did I spend?"), answer directly and DO NOT append [ACTION]. Only append [ACTION] when recording/logging new data.
 4. Keep answers concise, professional, and directly actionable.`;
 
+    const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
+    console.log(`[AI_REQUEST] requestId=${requestId} userId=${user.id.substring(0, 8)}...`);
+
     const apiKey =
       process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_API_KEY;
 
     if (!apiKey) {
-      console.error('[NisFlow AI] Missing Gemini API Key in environment variables');
+      console.error(`[AI_PROVIDER_ERROR] requestId=${requestId} code=missing_api_key`);
       return new Response(
         JSON.stringify({
           error: 'AI service is temporarily unconfigured. Please ensure GOOGLE_GENERATIVE_AI_API_KEY is configured in deployment environment.',
+          requestId,
         }),
         {
           status: 503,
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Request-Id': requestId,
+          },
         }
       );
     }
 
     const googleProvider = createGoogle({ apiKey });
+    const selectedModel = 'gemini-3.5-flash-lite';
+
+    console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
 
     const result = streamText({
-      model: googleProvider('gemini-3.6-flash'),
+      model: googleProvider(selectedModel),
       system: systemPrompt,
       messages: sanitizedMessages,
       maxRetries: 0,
       onError: ({ error }) => {
-        console.error('[NisFlow AI Stream Error]:', error);
+        console.error(`[AI_STREAM_ERROR] requestId=${requestId} error=`, error);
+      },
+      onFinish: () => {
+        console.log(`[AI_COMPLETE] requestId=${requestId} duration=${Math.round(performance.now() - tContextStart)}ms`);
       },
     });
 
     const contextDuration = Math.round(performance.now() - tContextStart);
+    console.log(`[AI_CONTEXT] requestId=${requestId} duration=${contextDuration}ms`);
 
     return result.toTextStreamResponse({
       headers: {
         'Cache-Control': 'no-cache, no-transform',
         'X-Accel-Buffering': 'no',
+        'X-Request-Id': requestId,
         'Server-Timing': `context;dur=${contextDuration}`,
       },
     });
   } catch (error: any) {
-    console.error('Chat API Error:', error);
-    return new Response(JSON.stringify({ error: error?.message || 'NisFlow AI is temporarily unavailable. Try again.' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const errorReqId = `err-${Date.now().toString(36)}`;
+    console.error(`[AI_UNHANDLED_ERROR] requestId=${errorReqId}:`, error);
+    return new Response(
+      JSON.stringify({
+        error: error?.message || 'NisFlow AI is temporarily unavailable. Try again.',
+        requestId: errorReqId,
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Request-Id': errorReqId,
+        },
+      }
+    );
   }
 }

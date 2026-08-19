@@ -244,6 +244,8 @@ export function CompanionDrawer() {
       controller.abort('timeout');
     }, 35000);
 
+    let requestId = 'unknown';
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -259,57 +261,86 @@ export function CompanionDrawer() {
       });
 
       clearTimeout(timeoutId);
+      requestId = response.headers.get('X-Request-Id') || 'unknown';
 
       if (!response.ok) {
         let errorMessage = 'NisFlow AI is temporarily unavailable. Try again.';
         if (response.status === 401) {
           errorMessage = 'Session expired. Please sign in again.';
           toast.error('Authentication session expired');
+        } else if (response.status === 403) {
+          errorMessage = `AI provider access was denied. (Ref: ${requestId})`;
+        } else if (response.status === 404) {
+          errorMessage = `The configured AI model is unavailable. (Ref: ${requestId})`;
         } else if (response.status === 429) {
-          errorMessage = 'Too many requests. Please wait a moment before asking again.';
+          errorMessage = 'AI is temporarily rate-limited. Please wait a moment and try again.';
+        } else if (response.status === 503) {
+          errorMessage = `AI service is temporarily experiencing high traffic. Please try again shortly. (Ref: ${requestId})`;
+        } else if (response.status === 504) {
+          errorMessage = `AI response timed out. Please try again. (Ref: ${requestId})`;
         } else {
           const errorData = await response.json().catch(() => ({}));
-          if (errorData.error) errorMessage = errorData.error;
+          if (errorData.error) {
+            errorMessage = `${errorData.error}${errorData.requestId ? ` (Ref: ${errorData.requestId})` : ''}`;
+          } else {
+            errorMessage = `NisFlow AI encountered an error. (Ref: ${requestId})`;
+          }
         }
         throw new Error(errorMessage);
       }
 
       if (!response.body) {
-        throw new Error('No response received from server.');
+        throw new Error(`No response received from server. (Ref: ${requestId})`);
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        accumulatedContent += chunk;
+          const chunk = decoder.decode(value, { stream: true });
+          accumulatedContent += chunk;
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? { ...msg, content: accumulatedContent }
-              : msg
-          )
-        );
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: accumulatedContent }
+                : msg
+            )
+          );
+        }
+      } catch (readErr: any) {
+        if (accumulatedContent.trim().length > 0) {
+          // If partial content was received before stream disconnect, preserve it and mark interruption
+          const interruptedContent = `${accumulatedContent}\n\n*(Connection interrupted — tap Retry below to regenerate)*`;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: interruptedContent, isError: true }
+                : msg
+            )
+          );
+          return;
+        }
+        throw readErr;
       }
 
       if (!accumulatedContent.trim()) {
-        throw new Error('NisFlow AI was unable to generate a response. Please try again.');
+        throw new Error(`AI was unable to generate a response. Please try again. (Ref: ${requestId})`);
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.error('Chat error:', err);
 
-      let userFacingError = 'NisFlow AI is temporarily unavailable. Try again.';
+      let userFacingError = `NisFlow AI is temporarily unavailable. Try again. (Ref: ${requestId})`;
       if (err.name === 'AbortError' || err === 'timeout') {
-        userFacingError = 'The request took too long. Check your connection and try again.';
+        userFacingError = `The request took too long. Check your connection and try again. (Ref: ${requestId})`;
       } else if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch'))) {
-        userFacingError = "NisFlow AI couldn't connect. Check your internet connection and try again.";
+        userFacingError = `NisFlow AI couldn't connect. Check your internet connection and try again. (Ref: ${requestId})`;
       } else if (err.message) {
         userFacingError = err.message;
       }
