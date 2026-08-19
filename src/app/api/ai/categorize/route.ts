@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
-import { google } from '@ai-sdk/google';
+import { createGoogle } from '@ai-sdk/google';
 import { z } from 'zod';
 
 import { checkCategorizeRateLimit } from '@/lib/security/rate-limit';
@@ -34,6 +34,20 @@ export async function POST(req: Request) {
         { status: 503 }
       );
     }
+
+    const apiKey =
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'AI service is temporarily unconfigured. Missing API key.' },
+        { status: 503 }
+      );
+    }
+
+    const google = createGoogle({ apiKey });
 
     const body = await req.json();
     const { description } = body;

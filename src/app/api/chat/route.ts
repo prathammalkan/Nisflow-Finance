@@ -1,4 +1,4 @@
-import { google } from '@ai-sdk/google';
+import { createGoogle } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
 import Decimal from 'decimal.js';
@@ -193,10 +193,33 @@ STRICT SCOPE AND BEHAVIOR RULES:
 3. If the user is only asking a question (e.g. "What is my balance?", "How much did I spend?"), answer directly and DO NOT append [ACTION]. Only append [ACTION] when recording/logging new data.
 4. Keep answers concise, professional, and directly actionable.`;
 
+    const apiKey =
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
+
+    if (!apiKey) {
+      console.error('[NisFlow AI] Missing Gemini API Key in environment variables');
+      return new Response(
+        JSON.stringify({
+          error: 'AI service is temporarily unconfigured. Please ensure GOOGLE_GENERATIVE_AI_API_KEY is configured in deployment environment.',
+        }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const googleProvider = createGoogle({ apiKey });
+
     const result = streamText({
-      model: google('gemini-3.6-flash'),
+      model: googleProvider('gemini-3.6-flash'),
       system: systemPrompt,
       messages: sanitizedMessages,
+      onError: ({ error }) => {
+        console.error('[NisFlow AI Stream Error]:', error);
+      },
     });
 
     return result.toTextStreamResponse({

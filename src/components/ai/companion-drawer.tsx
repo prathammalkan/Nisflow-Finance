@@ -268,6 +268,10 @@ export function CompanionDrawer() {
           )
         );
       }
+
+      if (!accumulatedContent.trim()) {
+        throw new Error('NisFlow AI was unable to generate a response. Please try again.');
+      }
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.error('Chat error:', err);

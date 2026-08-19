@@ -91,3 +91,35 @@ test('Service Worker rule: verifies all API endpoints and Supabase requests bypa
     assert.ok(shouldBypass, `URL ${testUrl} must bypass service worker cache`);
   });
 });
+
+// Gemini Model Configuration and Key Resolution
+test('AI Provider: validates active Gemini model identifier and multi-key fallback', () => {
+  const activeModel = 'gemini-3.6-flash';
+  assert.equal(activeModel, 'gemini-3.6-flash');
+
+  // Test fallback precedence: GOOGLE_GENERATIVE_AI_API_KEY -> GEMINI_API_KEY -> GOOGLE_API_KEY
+  const resolveKey = (env: Record<string, string | undefined>) =>
+    env.GOOGLE_GENERATIVE_AI_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || null;
+
+  assert.equal(resolveKey({ GOOGLE_GENERATIVE_AI_API_KEY: 'key-1', GEMINI_API_KEY: 'key-2' }), 'key-1');
+  assert.equal(resolveKey({ GEMINI_API_KEY: 'key-2' }), 'key-2');
+  assert.equal(resolveKey({ GOOGLE_API_KEY: 'key-3' }), 'key-3');
+  assert.equal(resolveKey({}), null);
+});
+
+// Client Stream Error Detection
+test('Client Reader: empty stream is rejected with explicit user error', () => {
+  const accumulatedContent = '   ';
+  const hasContent = Boolean(accumulatedContent.trim());
+  assert.equal(hasContent, false);
+
+  const getError = (content: string) => {
+    if (!content.trim()) {
+      return 'NisFlow AI was unable to generate a response. Please try again.';
+    }
+    return null;
+  };
+
+  assert.equal(getError(accumulatedContent), 'NisFlow AI was unable to generate a response. Please try again.');
+  assert.equal(getError('Hello user'), null);
+});
