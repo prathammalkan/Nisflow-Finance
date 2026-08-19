@@ -116,6 +116,7 @@ export function CompanionDrawer() {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [actionStatuses, setActionStatuses] = useState<Record<string, 'pending' | 'success' | 'dismissed'>>({});
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [isExecutingAction, setIsExecutingAction] = useState<Record<string, boolean>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -333,6 +334,7 @@ export function CompanionDrawer() {
 
   const handleExecuteAction = async (msgId: string, action: AIFinancialActionPayload) => {
     setIsExecutingAction((prev) => ({ ...prev, [msgId]: true }));
+    setActionErrors((prev) => ({ ...prev, [msgId]: '' }));
     const supabase = createClient();
 
     try {
@@ -362,7 +364,9 @@ export function CompanionDrawer() {
       setActionStatuses((prev) => ({ ...prev, [msgId]: 'success' }));
     } catch (err: any) {
       console.error('Failed to execute action:', err);
-      toast.error(err.message || 'Failed to record entry');
+      const errMsg = err.message || 'Failed to record entry';
+      setActionErrors((prev) => ({ ...prev, [msgId]: errMsg }));
+      toast.error(errMsg);
     } finally {
       setIsExecutingAction((prev) => ({ ...prev, [msgId]: false }));
     }
@@ -602,6 +606,14 @@ export function CompanionDrawer() {
                             </div>
                           )}
                         </div>
+
+                        {/* Error state if mutation failed */}
+                        {actionStatus === 'pending' && actionErrors[m.id] && (
+                          <div className="p-2 rounded-lg bg-destructive/10 text-destructive text-xs border border-destructive/20 space-y-0.5">
+                            <p className="font-semibold">⚠️ Entry was NOT recorded</p>
+                            <p className="text-[11px] opacity-90">{actionErrors[m.id]}</p>
+                          </div>
+                        )}
 
                         {/* Action Card Controls */}
                         {actionStatus === 'pending' ? (

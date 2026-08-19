@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../../types/database.ts';
 import { postJournalEntry, postReversalEntry, validateJournalEntry } from './engine.ts';
 import type { JournalLineInput, PostJournalEntryInput } from './types.ts';
-import { SYSTEM_RESERVED_UUIDS, isValidUUID, normalizeEntityUUID } from './constants.ts';
+import { SYSTEM_RESERVED_UUIDS, isValidUUID, normalizeEntityUUID, getFallbackUUIDForEntityType } from './constants.ts';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
@@ -66,6 +66,12 @@ export async function ensureLedgerAccount(
     currency?: string;
   }
 ): Promise<string> {
+  const safeEntityId = isValidUUID(params.entityId)
+    ? params.entityId
+    : (params.entityId === 'GENERAL' || params.entityId === 'UNCATEGORIZED' || params.entityId === 'DEFAULT' || !params.entityId
+        ? getFallbackUUIDForEntityType(params.entityType)
+        : params.entityId);
+
   // Check if ledger account already exists
   const { data: existing, error: findError } = await (supabase.from('ledger_accounts') as any)
     .select('id')
@@ -86,7 +92,7 @@ export async function ensureLedgerAccount(
       name: params.name,
       account_type: params.accountType,
       entity_type: params.entityType,
-      entity_id: params.entityId,
+      entity_id: safeEntityId,
       currency: params.currency || 'INR',
       is_active: true,
     })
@@ -138,8 +144,9 @@ export async function recordFinancialTransaction(
     // 2. Build double-entry balanced lines based on transaction type
     switch (params.type) {
       case 'expense': {
-        const catId = params.categoryId || 'GENERAL';
-        const catEntityId = params.categoryId || SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE;
+        const isCatUUID = isValidUUID(params.categoryId);
+        const catId = isCatUUID ? params.categoryId! : 'GENERAL';
+        const catEntityId = isCatUUID ? params.categoryId! : SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE;
 
         const expLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `EXP-CAT-${catId}`,
@@ -158,8 +165,9 @@ export async function recordFinancialTransaction(
       }
 
       case 'income': {
-        const catId = params.categoryId || 'GENERAL';
-        const catEntityId = params.categoryId || SYSTEM_RESERVED_UUIDS.GENERAL_INCOME;
+        const isCatUUID = isValidUUID(params.categoryId);
+        const catId = isCatUUID ? params.categoryId! : 'GENERAL';
+        const catEntityId = isCatUUID ? params.categoryId! : SYSTEM_RESERVED_UUIDS.GENERAL_INCOME;
 
         const incLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `INC-CAT-${catId}`,
@@ -519,16 +527,14 @@ export async function recordFinancialTransaction(
         .insert({
           user_id: params.userId,
           account_id: params.accountId,
-          category_id: params.categoryId || null,
-          counterparty_id: params.counterpartyId || null,
+          category_id: isValidUUID(params.categoryId) ? params.categoryId : null,
           amount: decAmount.toNumber(),
           type: legacyTxType,
           direction,
           description: params.description,
           notes: params.notes ? `${params.notes} [Ledger: ${journalEntryId}]` : `[Ledger: ${journalEntryId}]`,
           date: txnDate,
-          status: 'confirmed',
-          bank_reference: params.idempotencyKey,
+          status: 'completed',
         })
         .select('id')
         .single();

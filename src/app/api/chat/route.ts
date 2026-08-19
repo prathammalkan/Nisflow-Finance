@@ -248,7 +248,8 @@ ${recentTxList}
 
 RECORDING DATA & ACTIONS:
 When the user states that they spent, received, borrowed, lent money, paid loan EMI, bought/sold investments, or want to reverse an entry (e.g., "Paid ₹350 for lunch from Kotak", "Borrowed ₹5,000 from Rahul", "Lent ₹2,000 to Amit", "Paid EMI ₹15,000 for Car Loan", "Got ₹3,000 repayment from Rohit"), you must:
-1. Provide a short, friendly conversational message confirming what you parsed (1-2 sentences).
+1. Provide a short, friendly conversational message confirming what you prepared for review (1-2 sentences).
+CRITICAL: Do NOT claim that you have already recorded, posted, or saved the transaction. Clearly state that you have prepared the transaction details for the user to review and confirm below (e.g., "I've prepared a ₹1,000.00 deposit from Papa into your Bob account. Please review and confirm below.").
 2. At the end of your message, output a strict JSON action block enclosed in [ACTION] and [/ACTION] tags.
 
 Action Block Schema:

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import Decimal from 'decimal.js';
 import { executeAIFinancialAction } from '../src/lib/ledger/ai.ts';
 import type { AIFinancialActionPayload } from '../src/lib/ledger/ai.ts';
+import { recordFinancialTransaction } from '../src/lib/ledger/service.ts';
+import { isValidUUID, SYSTEM_RESERVED_UUIDS } from '../src/lib/ledger/constants.ts';
 import { getCounterpartyAuthoritativeBalance, getPeopleAuthoritativeSummary } from '../src/lib/ledger/people.ts';
 import { getLoanAuthoritativeBalance } from '../src/lib/ledger/loans.ts';
 
@@ -829,4 +831,180 @@ test('22. Investment-Specific Scoping: Holding context is isolated to user portf
 
   assert.equal(holding.symbol, 'INFY');
   assert.equal(holding.quantity, 50);
+});
+
+test('23. AI Income "GENERAL" Category Sentinel: Successfully provisions valid UUID for income_category', async () => {
+  const userId = 'user-1';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: 'acc-bob', user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-deposit-papa', {
+    actionType: 'income',
+    actionId: 'act-deposit-papa',
+    amount: '1000.00',
+    description: 'Deposit from Papa',
+    accountName: 'Bob Account',
+    accountId: 'acc-bob',
+    personName: 'Papa',
+  });
+
+  assert.equal(res.success, true);
+  assert.ok(res.journalEntryId);
+
+  // Verify created ledger account has code INC-CAT-GENERAL and valid UUID entity_id
+  const incAcc = supabase._store.ledger_accounts.find((a: any) => a.code === 'INC-CAT-GENERAL');
+  assert.ok(incAcc, 'INC-CAT-GENERAL ledger account must be provisioned');
+  assert.equal(incAcc.account_type, 'income');
+  assert.equal(incAcc.entity_type, 'income_category');
+  assert.equal(isValidUUID(incAcc.entity_id), true);
+  assert.equal(incAcc.entity_id, SYSTEM_RESERVED_UUIDS.GENERAL_INCOME);
+});
+
+test('24. Category Namespace Separation: Expense and Income categories do not collide', async () => {
+  const userId = 'user-1';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: 'acc-main', user_id: userId, name: 'Main Account', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  // Post general expense
+  await executeAIFinancialAction(supabase, userId, 'msg-exp', {
+    actionType: 'expense',
+    actionId: 'act-exp',
+    amount: '500.00',
+    accountId: 'acc-main',
+  });
+
+  // Post general income
+  await executeAIFinancialAction(supabase, userId, 'msg-inc', {
+    actionType: 'income',
+    actionId: 'act-inc',
+    amount: '500.00',
+    accountId: 'acc-main',
+  });
+
+  const expAcc = supabase._store.ledger_accounts.find((a: any) => a.code === 'EXP-CAT-GENERAL');
+  const incAcc = supabase._store.ledger_accounts.find((a: any) => a.code === 'INC-CAT-GENERAL');
+
+  assert.ok(expAcc);
+  assert.ok(incAcc);
+  assert.notEqual(expAcc.id, incAcc.id);
+  assert.equal(expAcc.entity_type, 'expense_category');
+  assert.equal(incAcc.entity_type, 'income_category');
+  assert.equal(expAcc.entity_id, SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE);
+  assert.equal(incAcc.entity_id, SYSTEM_RESERVED_UUIDS.GENERAL_INCOME);
+});
+
+test('25. AI Income Balanced Ledger Posting: Dr Asset, Cr Income, Sum(Dr) = Sum(Cr)', async () => {
+  const userId = 'user-1';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: 'acc-bob', user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-bal-check', {
+    actionType: 'income',
+    actionId: 'act-bal-check',
+    amount: '2500.00',
+    accountId: 'acc-bob',
+  });
+
+  assert.equal(res.success, true);
+  const entry = supabase._store.journal_entries.find((e: any) => e.id === res.journalEntryId);
+  assert.ok(entry);
+  assert.equal(entry.status, 'posted');
+
+  const lines = supabase._store.journal_lines.filter((l: any) => l.journal_entry_id === entry.id);
+  assert.equal(lines.length, 2);
+
+  const drLine = lines.find((l: any) => Number(l.debit_amount) > 0);
+  const crLine = lines.find((l: any) => Number(l.credit_amount) > 0);
+  assert.ok(drLine);
+  assert.ok(crLine);
+  assert.equal(Number(drLine.debit_amount), 2500);
+  assert.equal(Number(crLine.credit_amount), 2500);
+});
+
+test('26. Double-Click Idempotency on AI Income Action: Produces exactly one journal entry', async () => {
+  const userId = 'user-1';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: 'acc-bob', user_id: userId, name: 'Bob Account', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  const payload = {
+    actionType: 'income' as const,
+    actionId: 'act-double-click',
+    amount: '1000.00',
+    accountId: 'acc-bob',
+  };
+
+  const res1 = await executeAIFinancialAction(supabase, userId, 'msg-same', payload);
+  const res2 = await executeAIFinancialAction(supabase, userId, 'msg-same', payload);
+
+  assert.equal(res1.success, true);
+  assert.equal(res2.success, true);
+  assert.equal(res1.journalEntryId, res2.journalEntryId);
+
+  const totalEntries = supabase._store.journal_entries.filter((e: any) => e.user_id === userId);
+  assert.equal(totalEntries.length, 1);
+});
+
+test('27. Cross-User AI Income Rejection: Foreign account ID is rejected', async () => {
+  const userId = 'user-attacker';
+  const victimId = 'user-victim';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: 'acc-victim', user_id: victimId, name: 'Victim Bank', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  const res = await executeAIFinancialAction(supabase, userId, 'msg-hack', {
+    actionType: 'income',
+    actionId: 'act-hack',
+    amount: '10000.00',
+    accountId: 'acc-victim',
+  });
+
+  assert.equal(res.success, false);
+  assert.match(res.error || '', /Security Violation/);
+});
+
+test('28. Exhaustive UUID Safety: Non-UUID sentinels are strictly normalized across all transaction types', async () => {
+  const userId = 'user-1';
+  const accId = '11111111-1111-4111-a111-111111111111';
+  const supabase = createMockSupabase({
+    userId,
+    accounts: [{ id: accId, user_id: userId, name: 'Bank 1', type: 'bank', ownership: 'personal', is_active: true }],
+  });
+
+  // Expense with invalid string categoryId
+  await recordFinancialTransaction(supabase, {
+    userId,
+    type: 'expense',
+    accountId: accId,
+    categoryId: 'RANDOM_NON_UUID_SENTINEL',
+    amount: '100.00',
+    date: '2026-08-19',
+    description: 'Test Invalid UUID Cat',
+    idempotencyKey: `TEST:INV:CAT:${Date.now()}`,
+  });
+
+  // Income with invalid string categoryId
+  await recordFinancialTransaction(supabase, {
+    userId,
+    type: 'income',
+    accountId: accId,
+    categoryId: 'INVALID_INC_CAT',
+    amount: '200.00',
+    date: '2026-08-19',
+    description: 'Test Invalid UUID Income Cat',
+    idempotencyKey: `TEST:INV:INC:${Date.now()}`,
+  });
+
+  // Check all created ledger accounts
+  for (const la of supabase._store.ledger_accounts) {
+    assert.equal(isValidUUID(la.entity_id), true, `Ledger account ${la.code} must have a valid UUID entity_id, got: ${la.entity_id}`);
+  }
 });

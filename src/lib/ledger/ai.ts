@@ -213,6 +213,7 @@ export async function executeAIFinancialAction(
           userId,
           type: action.actionType,
           accountId: sourceAccountId,
+          counterpartyId: counterpartyId || undefined,
           amount: decAmount.toFixed(2),
           date: txnDate,
           description: action.description || `${action.actionType.toUpperCase()} via NisFlow AI`,

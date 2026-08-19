@@ -44,3 +44,43 @@ export function normalizeEntityUUID(id: string | null | undefined, fallbackUUID:
   }
   return fallbackUUID;
 }
+
+/**
+ * Returns the canonical deterministic reserved UUID for any entity type.
+ */
+export function getFallbackUUIDForEntityType(entityType: string): string {
+  switch (entityType) {
+    case 'expense_category':
+    case 'category':
+      return SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE;
+    case 'income_category':
+      return SYSTEM_RESERVED_UUIDS.GENERAL_INCOME;
+    case 'counterparty':
+    case 'counterparty_receivable':
+    case 'counterparty_payable':
+      return SYSTEM_RESERVED_UUIDS.GENERAL_COUNTERPARTY;
+    case 'loan':
+    case 'loan_interest':
+      return SYSTEM_RESERVED_UUIDS.GENERAL_LOAN;
+    case 'investment':
+      return SYSTEM_RESERVED_UUIDS.GENERAL_INVESTMENT;
+    case 'capital_gain':
+      return SYSTEM_RESERVED_UUIDS.CAPITAL_GAIN;
+    case 'capital_loss':
+      return SYSTEM_RESERVED_UUIDS.CAPITAL_LOSS;
+    case 'dividend':
+      return SYSTEM_RESERVED_UUIDS.DIVIDEND;
+    case 'opening_balance':
+    case 'system':
+    case 'equity':
+      return SYSTEM_RESERVED_UUIDS.OPENING_BALANCE;
+    case 'reconciliation':
+    case 'reconciliation_surplus':
+      return SYSTEM_RESERVED_UUIDS.RECONCILIATION_SURPLUS;
+    case 'reconciliation_shortfall':
+      return SYSTEM_RESERVED_UUIDS.RECONCILIATION_SHORTFALL;
+    default:
+      return SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE;
+  }
+}
+
