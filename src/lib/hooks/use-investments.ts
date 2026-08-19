@@ -62,6 +62,7 @@ export function useCreateInvestmentTransaction() {
       // 1. If cashflow account is provided, post to double-entry ledger first
       const txAmountDec = new Decimal(transaction.amount || 0);
       let journalEntryId: string | undefined;
+      const txId = (transaction as any).id || crypto.randomUUID();
 
       if (transaction.account_id && txAmountDec.gt(0)) {
         let ledgerType: 'investment_purchase' | 'investment_sale' | 'dividend' | null = null;
@@ -70,7 +71,7 @@ export function useCreateInvestmentTransaction() {
         else if (transaction.type === 'dividend') ledgerType = 'dividend';
 
         if (ledgerType) {
-          const idempotencyKey = `INV:${transaction.type.toUpperCase()}:${transaction.investment_id}:${Date.now()}`;
+          const idempotencyKey = (transaction as any).idempotency_key || `INV:${transaction.type.toUpperCase()}:${transaction.investment_id}:${txId}`;
           const ledgerRes = await recordFinancialTransaction(supabase as any, {
             userId: userData.user.id,
             type: ledgerType,
@@ -83,6 +84,7 @@ export function useCreateInvestmentTransaction() {
             sourceId: transaction.investment_id,
             metadata: {
               investmentId: transaction.investment_id,
+              costBasis: (transaction as any).cost_basis || (transaction as any).carrying_value,
               quantity: transaction.quantity,
               price: transaction.price,
               fees: transaction.fees,
@@ -99,6 +101,7 @@ export function useCreateInvestmentTransaction() {
 
       // 2. Insert transaction into investment_transactions projection
       const txPayload = {
+        id: txId,
         user_id: userData.user.id,
         investment_id: transaction.investment_id,
         type: transaction.type,
@@ -123,6 +126,7 @@ export function useCreateInvestmentTransaction() {
       const { data: inv, error: invError } = await (supabase.from('investments') as any)
         .select('*')
         .eq('id', transaction.investment_id)
+        .eq('user_id', userData.user.id)
         .single();
 
       if (!invError && inv) {
@@ -161,7 +165,8 @@ export function useCreateInvestmentTransaction() {
             units: newQty.toNumber(),
             updated_at: new Date().toISOString(),
           })
-          .eq('id', transaction.investment_id);
+          .eq('id', transaction.investment_id)
+          .eq('user_id', userData.user.id);
       }
 
       return insertedTx;

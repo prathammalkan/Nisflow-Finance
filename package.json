@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test test/financial-logic.test.ts test/ai-chat-reliability.test.ts test/security-hardening.test.ts test/task3c-security-hardening.test.ts test/ledger-foundation.test.ts test/ledger-migration.test.ts test/ledger-cutover.test.ts test/ledger-bypass-fix.test.ts"
+    "test": "node --experimental-strip-types --test test/financial-logic.test.ts test/ai-chat-reliability.test.ts test/security-hardening.test.ts test/task3c-security-hardening.test.ts test/ledger-foundation.test.ts test/ledger-migration.test.ts test/ledger-cutover.test.ts test/ledger-bypass-fix.test.ts test/ledger-production-integrity.test.ts test/task4e-final-gate.test.ts test/people-ledger.test.ts test/remote-security-audit.test.ts test/loans-ledger.test.ts test/dashboard-analytics-ledger.test.ts test/receivables-payables-ledger.test.ts test/ai-financial-actions.test.ts test/forensic-remediation.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.44",

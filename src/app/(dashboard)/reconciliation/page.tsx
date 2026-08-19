@@ -31,9 +31,13 @@ export default function ReconciliationPage() {
     queryKey: ['bank_statement_transactions', selectedAccountId],
     queryFn: async () => {
       if (!selectedAccountId) return [];
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return [];
+
       const { data: statements, error: stmtErr } = await (supabase.from('bank_statements') as any)
         .select('id')
-        .eq('account_id', selectedAccountId);
+        .eq('account_id', selectedAccountId)
+        .eq('user_id', userData.user.id);
       if (stmtErr || !statements || statements.length === 0) return [];
 
       const stmtIds = statements.map((s: any) => s.id);
@@ -53,9 +57,13 @@ export default function ReconciliationPage() {
     queryKey: ['ledger_transactions_for_rec', selectedAccountId],
     queryFn: async () => {
       if (!selectedAccountId) return [];
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return [];
+
       const { data, error } = await (supabase.from('transactions') as any)
         .select('*')
         .eq('account_id', selectedAccountId)
+        .eq('user_id', userData.user.id)
         .eq('is_deleted', false)
         .order('date', { ascending: false });
 
@@ -106,7 +114,8 @@ export default function ReconciliationPage() {
             status: 'reconciled',
             updated_at: new Date().toISOString(),
           })
-          .eq('id', pair.ledgerTx.id);
+          .eq('id', pair.ledgerTx.id)
+          .eq('user_id', userData.user.id);
       }
 
       // 3. Create reconciliation record
@@ -131,7 +140,8 @@ export default function ReconciliationPage() {
           last_reconciled_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', selectedAccountId);
+        .eq('id', selectedAccountId)
+        .eq('user_id', userData.user.id);
 
       toast.success(
         `Reconciliation completed. ${matchResult.matched.length} transaction pairs reconciled successfully.`

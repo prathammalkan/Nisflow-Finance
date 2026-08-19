@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../../types/database.ts';
 import { postJournalEntry, postReversalEntry, validateJournalEntry } from './engine.ts';
 import type { JournalLineInput, PostJournalEntryInput } from './types.ts';
+import { SYSTEM_RESERVED_UUIDS, isValidUUID, normalizeEntityUUID } from './constants.ts';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
@@ -17,6 +18,7 @@ export type FinancialTransactionType =
   | 'investment_purchase'
   | 'investment_sale'
   | 'dividend'
+  | 'loan_disbursement'
   | 'loan_emi'
   | 'opening_balance'
   | 'reconciliation_adjustment';
@@ -137,12 +139,14 @@ export async function recordFinancialTransaction(
     switch (params.type) {
       case 'expense': {
         const catId = params.categoryId || 'GENERAL';
+        const catEntityId = params.categoryId || SYSTEM_RESERVED_UUIDS.GENERAL_EXPENSE;
+
         const expLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `EXP-CAT-${catId}`,
           name: `Expense Category ${catId}`,
           accountType: 'expense',
-          entityType: 'category',
-          entityId: catId,
+          entityType: 'expense_category',
+          entityId: catEntityId,
         });
 
         // Dr Expense, Cr Asset
@@ -155,12 +159,14 @@ export async function recordFinancialTransaction(
 
       case 'income': {
         const catId = params.categoryId || 'GENERAL';
+        const catEntityId = params.categoryId || SYSTEM_RESERVED_UUIDS.GENERAL_INCOME;
+
         const incLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `INC-CAT-${catId}`,
           name: `Income Category ${catId}`,
           accountType: 'income',
-          entityType: 'category',
-          entityId: catId,
+          entityType: 'income_category',
+          entityId: catEntityId,
         });
 
         // Dr Asset, Cr Income
@@ -194,12 +200,14 @@ export async function recordFinancialTransaction(
 
       case 'lending': {
         const personId = params.counterpartyId || 'GENERAL';
+        const personUUID = isValidUUID(params.counterpartyId) ? params.counterpartyId! : SYSTEM_RESERVED_UUIDS.GENERAL_COUNTERPARTY;
+
         const recLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `AST-REC-${personId}`,
           name: `Receivable: Person ${personId}`,
           accountType: 'asset',
-          entityType: 'counterparty',
-          entityId: personId,
+          entityType: 'counterparty_receivable',
+          entityId: personUUID,
         });
 
         // Dr Asset:Receivable, Cr Asset:Bank
@@ -212,12 +220,14 @@ export async function recordFinancialTransaction(
 
       case 'borrowing': {
         const personId = params.counterpartyId || 'GENERAL';
+        const personUUID = isValidUUID(params.counterpartyId) ? params.counterpartyId! : SYSTEM_RESERVED_UUIDS.GENERAL_COUNTERPARTY;
+
         const payLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `LIA-PAY-${personId}`,
           name: `Payable: Person ${personId}`,
           accountType: 'liability',
-          entityType: 'counterparty',
-          entityId: personId,
+          entityType: 'counterparty_payable',
+          entityId: personUUID,
         });
 
         // Dr Asset:Bank, Cr Liability:Payable
@@ -231,6 +241,7 @@ export async function recordFinancialTransaction(
       case 'repayment':
       case 'settlement': {
         const personId = params.counterpartyId || 'GENERAL';
+        const personUUID = isValidUUID(params.counterpartyId) ? params.counterpartyId! : SYSTEM_RESERVED_UUIDS.GENERAL_COUNTERPARTY;
         // Check if receiving repayment (money in) or making repayment (money out)
         const isReceiving = params.metadata?.direction === 'in' || !params.metadata?.isDebtRepayment;
 
@@ -239,8 +250,8 @@ export async function recordFinancialTransaction(
             code: `AST-REC-${personId}`,
             name: `Receivable: Person ${personId}`,
             accountType: 'asset',
-            entityType: 'counterparty',
-            entityId: personId,
+            entityType: 'counterparty_receivable',
+            entityId: personUUID,
           });
           // Dr Asset:Bank, Cr Asset:Receivable
           lines = [
@@ -252,8 +263,8 @@ export async function recordFinancialTransaction(
             code: `LIA-PAY-${personId}`,
             name: `Payable: Person ${personId}`,
             accountType: 'liability',
-            entityType: 'counterparty',
-            entityId: personId,
+            entityType: 'counterparty_payable',
+            entityId: personUUID,
           });
           // Dr Liability:Payable, Cr Asset:Bank
           lines = [
@@ -264,8 +275,29 @@ export async function recordFinancialTransaction(
         break;
       }
 
+      case 'loan_disbursement': {
+        const loanId = params.metadata?.loanId || params.sourceId || 'GENERAL';
+        const loanUUID = isValidUUID(params.metadata?.loanId || params.sourceId) ? (params.metadata?.loanId || params.sourceId)! : SYSTEM_RESERVED_UUIDS.GENERAL_LOAN;
+
+        const loanLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
+          code: `LIA-LOAN-${loanId}`,
+          name: `Loan Liability ${loanId}`,
+          accountType: 'liability',
+          entityType: 'loan',
+          entityId: loanUUID,
+        });
+
+        // Dr Asset:Bank, Cr Liability:Loan
+        lines = [
+          { ledgerAccountId: sourceLedgerAccId, debitAmount: formattedAmount, creditAmount: '0.00', memo: params.description },
+          { ledgerAccountId: loanLedgerAccId, debitAmount: '0.00', creditAmount: formattedAmount, memo: params.description },
+        ];
+        break;
+      }
+
       case 'loan_emi': {
         const loanId = params.metadata?.loanId || 'GENERAL';
+        const loanUUID = isValidUUID(params.metadata?.loanId) ? params.metadata!.loanId : SYSTEM_RESERVED_UUIDS.GENERAL_LOAN;
         const principal = new Decimal(params.principalAmount || params.amount);
         const interest = new Decimal(params.interestAmount || 0);
 
@@ -278,7 +310,7 @@ export async function recordFinancialTransaction(
           name: `Loan Liability ${loanId}`,
           accountType: 'liability',
           entityType: 'loan',
-          entityId: loanId,
+          entityId: loanUUID,
         });
 
         const intExpAccId = await ensureLedgerAccount(supabase, params.userId, {
@@ -286,7 +318,7 @@ export async function recordFinancialTransaction(
           name: `Loan Interest Expense ${loanId}`,
           accountType: 'expense',
           entityType: 'loan_interest',
-          entityId: loanId,
+          entityId: loanUUID,
         });
 
         lines = [
@@ -299,12 +331,14 @@ export async function recordFinancialTransaction(
 
       case 'investment_purchase': {
         const invId = params.metadata?.investmentId || 'GENERAL';
+        const invUUID = isValidUUID(params.metadata?.investmentId) ? params.metadata!.investmentId : SYSTEM_RESERVED_UUIDS.GENERAL_INVESTMENT;
+
         const invLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `AST-INV-${invId}`,
           name: `Investment Asset ${invId}`,
           accountType: 'asset',
           entityType: 'investment',
-          entityId: invId,
+          entityId: invUUID,
         });
 
         // Dr Asset:Investment, Cr Asset:Bank
@@ -317,19 +351,65 @@ export async function recordFinancialTransaction(
 
       case 'investment_sale': {
         const invId = params.metadata?.investmentId || 'GENERAL';
+        const invUUID = isValidUUID(params.metadata?.investmentId) ? params.metadata!.investmentId : SYSTEM_RESERVED_UUIDS.GENERAL_INVESTMENT;
+
         const invLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
           code: `AST-INV-${invId}`,
           name: `Investment Asset ${invId}`,
           accountType: 'asset',
           entityType: 'investment',
-          entityId: invId,
+          entityId: invUUID,
         });
 
-        // Dr Asset:Bank, Cr Asset:Investment
-        lines = [
-          { ledgerAccountId: sourceLedgerAccId, debitAmount: formattedAmount, creditAmount: '0.00', memo: params.description },
-          { ledgerAccountId: invLedgerAccId, debitAmount: '0.00', creditAmount: formattedAmount, memo: params.description },
-        ];
+        const saleProceeds = decAmount;
+        const costBasis = params.metadata?.costBasis !== undefined
+          ? new Decimal(params.metadata.costBasis)
+          : (params.metadata?.carryingValue !== undefined ? new Decimal(params.metadata.carryingValue) : saleProceeds);
+
+        lines = [];
+
+        if (costBasis.lt(saleProceeds)) {
+          // PROFITABLE SALE (Gain):
+          // Dr Cash/Bank (saleProceeds), Cr Investment (costBasis), Cr Realized Gain (gain)
+          const gain = saleProceeds.minus(costBasis);
+          const gainLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
+            code: `INC-CAP-GAIN`,
+            name: `Realized Capital Gains`,
+            accountType: 'income',
+            entityType: 'capital_gain',
+            entityId: SYSTEM_RESERVED_UUIDS.CAPITAL_GAIN,
+          });
+
+          lines.push(
+            { ledgerAccountId: sourceLedgerAccId, debitAmount: saleProceeds.toFixed(2), creditAmount: '0.00', memo: `${params.description} (Proceeds)` },
+            { ledgerAccountId: invLedgerAccId, debitAmount: '0.00', creditAmount: costBasis.toFixed(2), memo: `${params.description} (Cost Basis)` },
+            { ledgerAccountId: gainLedgerAccId, debitAmount: '0.00', creditAmount: gain.toFixed(2), memo: `${params.description} (Realized Gain)` }
+          );
+        } else if (costBasis.gt(saleProceeds)) {
+          // LOSS-MAKING SALE (Loss):
+          // Dr Cash/Bank (saleProceeds), Dr Realized Loss (loss), Cr Investment (costBasis)
+          const loss = costBasis.minus(saleProceeds);
+          const lossLedgerAccId = await ensureLedgerAccount(supabase, params.userId, {
+            code: `EXP-CAP-LOSS`,
+            name: `Realized Capital Loss`,
+            accountType: 'expense',
+            entityType: 'capital_loss',
+            entityId: SYSTEM_RESERVED_UUIDS.CAPITAL_LOSS,
+          });
+
+          lines.push(
+            { ledgerAccountId: sourceLedgerAccId, debitAmount: saleProceeds.toFixed(2), creditAmount: '0.00', memo: `${params.description} (Proceeds)` },
+            { ledgerAccountId: lossLedgerAccId, debitAmount: loss.toFixed(2), creditAmount: '0.00', memo: `${params.description} (Realized Loss)` },
+            { ledgerAccountId: invLedgerAccId, debitAmount: '0.00', creditAmount: costBasis.toFixed(2), memo: `${params.description} (Cost Basis)` }
+          );
+        } else {
+          // AT-COST SALE:
+          // Dr Cash/Bank (saleProceeds), Cr Investment (costBasis)
+          lines.push(
+            { ledgerAccountId: sourceLedgerAccId, debitAmount: saleProceeds.toFixed(2), creditAmount: '0.00', memo: params.description },
+            { ledgerAccountId: invLedgerAccId, debitAmount: '0.00', creditAmount: costBasis.toFixed(2), memo: params.description }
+          );
+        }
         break;
       }
 
@@ -339,7 +419,7 @@ export async function recordFinancialTransaction(
           name: `Investment Dividend Income`,
           accountType: 'income',
           entityType: 'dividend',
-          entityId: 'DIVIDEND',
+          entityId: SYSTEM_RESERVED_UUIDS.DIVIDEND,
         });
 
         // Dr Asset:Bank, Cr Income:Dividend
@@ -356,7 +436,7 @@ export async function recordFinancialTransaction(
           name: `Opening Balance Equity`,
           accountType: 'equity',
           entityType: 'opening_balance',
-          entityId: 'OPENING_BAL',
+          entityId: SYSTEM_RESERVED_UUIDS.OPENING_BALANCE,
         });
 
         // Dr Asset:Account, Cr Equity:Opening Balance
@@ -375,7 +455,7 @@ export async function recordFinancialTransaction(
             name: `Reconciliation Adjustment (Surplus)`,
             accountType: 'income',
             entityType: 'reconciliation',
-            entityId: 'RECON_INC',
+            entityId: SYSTEM_RESERVED_UUIDS.RECONCILIATION_SURPLUS,
           });
           // Dr Asset:Bank, Cr Income:Recon Adjustment
           lines = [
@@ -388,7 +468,7 @@ export async function recordFinancialTransaction(
             name: `Reconciliation Adjustment (Shortfall)`,
             accountType: 'expense',
             entityType: 'reconciliation',
-            entityId: 'RECON_EXP',
+            entityId: SYSTEM_RESERVED_UUIDS.RECONCILIATION_SHORTFALL,
           });
           // Dr Expense:Recon Adjustment, Cr Asset:Bank
           lines = [
@@ -410,7 +490,7 @@ export async function recordFinancialTransaction(
       description: params.description,
       sourceType: (params.sourceType as any) || 'manual',
       sourceId: params.sourceId || null,
-      idempotencyKey: params.idempotencyKey,
+      idempotencyKey: params.idempotencyKey || `TXN:${params.userId}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
       lines,
       createdBy: params.userId,
       metadata: params.metadata || {},
@@ -487,7 +567,7 @@ export async function reverseFinancialTransaction(
     userId: string;
     journalEntryId: string;
     reason: string;
-    idempotencyKey: string;
+    idempotencyKey?: string;
   }
 ): Promise<{ success: boolean; reversalEntryId?: string; error?: string }> {
   try {
@@ -495,7 +575,7 @@ export async function reverseFinancialTransaction(
       userId: params.userId,
       originalEntryId: params.journalEntryId,
       reason: params.reason,
-      idempotencyKey: params.idempotencyKey,
+      idempotencyKey: params.idempotencyKey || `REV:${params.journalEntryId}`,
       createdBy: params.userId,
     });
 

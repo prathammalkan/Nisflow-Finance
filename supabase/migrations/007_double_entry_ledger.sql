@@ -389,15 +389,17 @@ BEGIN
                 v_line_delta := v_line.credit_amount - v_line.debit_amount;
             END IF;
 
+            -- Synchronize BOTH balance and current_balance projections
             UPDATE public.accounts
-            SET balance = balance + v_line_delta,
+            SET balance = COALESCE(balance, 0.00) + v_line_delta,
+                current_balance = COALESCE(current_balance, 0.00) + v_line_delta,
                 updated_at = NOW()
             WHERE id = v_line_entity_id AND user_id = p_user_id;
         END IF;
     END LOOP;
 
-    -- 8. Compute cryptographic SHA-256 hash for audit record
-    v_payload_hash := md5(v_payload_text); -- Using standard hash digest
+    -- 8. Compute true cryptographic SHA-256 hash for audit record (64 hex chars)
+    v_payload_hash := encode(sha256(v_payload_text::bytea), 'hex');
 
     -- 9. Insert Immutable Audit Log Record
     INSERT INTO public.ledger_audit_log (
@@ -418,7 +420,7 @@ BEGIN
 
     RETURN v_new_entry_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions;
 
 -- ============================================================
 -- 10. ATOMIC REVERSAL STORED PROCEDURE
@@ -499,13 +501,13 @@ BEGIN
         v_reversal_entry_id,
         'REVERSE',
         p_created_by,
-        md5('REVERSE|' || p_original_entry_id::text || '|' || v_reversal_entry_id::text),
+        encode(sha256(('REVERSE|' || p_original_entry_id::text || '|' || v_reversal_entry_id::text)::bytea), 'hex'),
         p_metadata || jsonb_build_object('reversed_entry_id', p_original_entry_id)
     );
 
     RETURN v_reversal_entry_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions;
 
 -- ============================================================
 -- 11. RECONCILIATION & DISCREPANCY DETECTION FUNCTION
@@ -525,12 +527,12 @@ BEGIN
     SELECT 
         a.id AS account_id,
         a.name AS account_name,
-        COALESCE(a.balance, 0.00) AS cached_balance,
-        COALESCE(public.get_ledger_account_balance(la.id), 0.00) AS ledger_balance,
-        (COALESCE(a.balance, 0.00) - COALESCE(public.get_ledger_account_balance(la.id), 0.00)) AS discrepancy,
-        (COALESCE(a.balance, 0.00) = COALESCE(public.get_ledger_account_balance(la.id), 0.00)) AS is_reconciled
+        COALESCE(a.balance, a.current_balance, 0.00) AS cached_balance,
+        COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00) AS ledger_balance,
+        (COALESCE(a.balance, a.current_balance, 0.00) - COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00)) AS discrepancy,
+        (COALESCE(a.balance, a.current_balance, 0.00) = COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00)) AS is_reconciled
     FROM public.accounts a
     LEFT JOIN public.ledger_accounts la ON la.entity_id = a.id AND la.entity_type = 'account' AND la.user_id = p_user_id
     WHERE a.user_id = p_user_id;
 END;
-$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, extensions;

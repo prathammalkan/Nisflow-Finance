@@ -25,9 +25,13 @@ export function useIPO(id: string) {
   return useQuery({
     queryKey: ['ipo', id],
     queryFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase.from('ipos') as any)
         .select('*, applications:ipo_applications(*)')
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .single();
       if (error) throw error;
       return data as any;
@@ -78,6 +82,9 @@ export function useUpdateIPO() {
   
   return useMutation({
     mutationFn: async ({ id, ...updateData }: any) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const payload: any = {
         updated_at: new Date().toISOString(),
       };
@@ -93,7 +100,12 @@ export function useUpdateIPO() {
       if (updateData.lot_size !== undefined) payload.lot_size = Number(updateData.lot_size);
       if (updateData.status !== undefined) payload.status = updateData.status;
 
-      const { data, error } = await (supabase.from('ipos') as any).update(payload).eq('id', id).select().single();
+      const { data, error } = await (supabase.from('ipos') as any)
+        .update(payload)
+        .eq('id', id)
+        .eq('user_id', userData.user.id)
+        .select()
+        .single();
       if (error) throw error;
       return data as any;
     },
@@ -113,9 +125,13 @@ export function useIPOApplications(ipoId: string) {
   return useQuery({
     queryKey: ['ipo_applications', ipoId],
     queryFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase.from('ipo_applications') as any)
         .select('*')
         .eq('ipo_id', ipoId)
+        .eq('user_id', userData.user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data as any[]) || [];
@@ -174,12 +190,20 @@ export function useUpdateIPOApplication() {
   
   return useMutation({
     mutationFn: async ({ id, ipo_id, ...updateData }: any) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const payload = {
         ...updateData,
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await (supabase.from('ipo_applications') as any).update(payload).eq('id', id).select().single();
+      const { data, error } = await (supabase.from('ipo_applications') as any)
+        .update(payload)
+        .eq('id', id)
+        .eq('user_id', userData.user.id)
+        .select()
+        .single();
       if (error) throw error;
       return data as any;
     },

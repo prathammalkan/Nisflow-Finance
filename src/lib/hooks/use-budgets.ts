@@ -91,10 +91,14 @@ export function useUpdateBudgetCategory() {
   return useMutation({
     mutationFn: async ({ id, allocated_amount }: { id: string; allocated_amount: number }) => {
       const supabase = createClient();
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Not authenticated");
+
       const { data, error } = await (supabase
         .from("budgets") as any)
         .update({ allocated_amount })
         .eq("id", id)
+        .eq("user_id", user.user.id)
         .select()
         .single();
 

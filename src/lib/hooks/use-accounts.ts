@@ -66,6 +66,7 @@ export function useCreateAccount() {
         ...newAccount,
         user_id: userData.user.id,
         balance: 0,
+        current_balance: 0,
       };
 
       const { data, error } = await supabase
@@ -113,14 +114,18 @@ export function useUpdateAccount() {
 
   return useMutation({
     mutationFn: async ({ id, ...updateData }: { id: string } & AccountUpdate) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       // Disallow direct balance mutations; balances must strictly be derived from ledger postings
-      const { balance, current_balance, ...safeUpdateData } = updateData as any;
+      const { balance, current_balance, user_id, ...safeUpdateData } = updateData as any;
 
       const { data, error } = await supabase
         .from('accounts')
         // @ts-ignore
         .update(safeUpdateData as any)
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .select()
         .single();
 
@@ -144,11 +149,15 @@ export function useDeleteAccount() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('accounts')
         // @ts-ignore
         .update({ is_active: false } as any)
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .select()
         .single();
 

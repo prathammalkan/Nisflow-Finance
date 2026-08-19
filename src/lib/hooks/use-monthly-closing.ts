@@ -8,9 +8,13 @@ export function useMonthlyClosings() {
   return useQuery({
     queryKey: ['monthly_closings'],
     queryFn: async () => {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('monthly_closings')
         .select('*')
+        .eq('user_id', user.user.id)
         .order('year', { ascending: false })
         .order('month', { ascending: false });
         
@@ -26,11 +30,15 @@ export function useMonthlyClosing(month: number, year: number) {
   return useQuery({
     queryKey: ['monthly_closing', month, year],
     queryFn: async () => {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('monthly_closings')
         .select('*')
         .eq('month', month)
         .eq('year', year)
+        .eq('user_id', user.user.id)
         .maybeSingle();
         
       if (error) throw error;
@@ -47,9 +55,12 @@ export function useCloseMonth() {
 
   return useMutation({
     mutationFn: async (closingData: any) => {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('monthly_closings')
-        .upsert([closingData] as any)
+        .upsert([{ ...closingData, user_id: user.user.id }] as any)
         .select()
         .single();
         
@@ -78,10 +89,14 @@ export function useReopenMonth() {
 
   return useMutation({
     mutationFn: async ({ id, reason, month, year }: { id: string; reason: string; month: number; year: number }) => {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase
         .from('monthly_closings') as any)
         .update({ status: 'reopened', notes: reason })
         .eq('id', id)
+        .eq('user_id', user.user.id)
         .select()
         .single();
         

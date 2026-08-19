@@ -8,7 +8,14 @@ export function useReconciliations(accountId?: string) {
   return useQuery({
     queryKey: ['reconciliations', accountId],
     queryFn: async () => {
-      let query = supabase.from('reconciliations').select('*').order('created_at', { ascending: false });
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      let query = supabase
+        .from('reconciliations')
+        .select('*')
+        .eq('user_id', userData.user.id)
+        .order('created_at', { ascending: false });
       if (accountId) {
         query = query.eq('account_id', accountId);
       }
@@ -26,9 +33,14 @@ export function useCreateReconciliation() {
 
   return useMutation({
     mutationFn: async (newReconciliation: any) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { user_id, ...safePayload } = newReconciliation;
+
       const { data, error } = await supabase
         .from('reconciliations')
-        .insert([newReconciliation] as any)
+        .insert([{ ...safePayload, user_id: userData.user.id }] as any)
         .select()
         .single();
       
@@ -47,10 +59,16 @@ export function useUpdateReconciliation() {
 
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { user_id, ...safeUpdates } = updates;
+
       const { data, error } = await (supabase
         .from('reconciliations') as any)
-        .update(updates)
+        .update(safeUpdates)
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .select()
         .single();
       
@@ -70,10 +88,14 @@ export function useReconciliationDetail(id: string) {
   return useQuery({
     queryKey: ['reconciliation', id],
     queryFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('reconciliations')
         .select('*, reconciliation_items(*)')
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .single();
       
       if (error) throw error;

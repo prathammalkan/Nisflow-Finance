@@ -56,10 +56,16 @@ export function useUpdateRule() {
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: string } & any) => {
       const supabase = createClient();
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Not authenticated");
+
+      const { user_id, ...safeUpdates } = updates;
+
       const { data, error } = await (supabase
         .from("classification_rules") as any)
-        .update(updates)
+        .update(safeUpdates)
         .eq("id", id)
+        .eq("user_id", user.user.id)
         .select()
         .single();
 
@@ -82,10 +88,14 @@ export function useDeleteRule() {
   return useMutation({
     mutationFn: async (id: string) => {
       const supabase = createClient();
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Not authenticated");
+
       const { error } = await supabase
         .from("classification_rules")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", user.user.id);
 
       if (error) throw error;
       return id;

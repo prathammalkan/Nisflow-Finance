@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { recordFinancialTransaction } from '@/lib/ledger/service';
+import { recordFinancialTransaction, reverseFinancialTransaction } from '@/lib/ledger/service';
 
 export type TransactionFilters = {
   account_id?: string;
@@ -115,7 +115,8 @@ export function useCreateTransaction() {
       const rawType = (newTransaction.type || newTransaction.transaction_type || 'expense').toLowerCase();
       const txType = rawType === 'transfer' ? 'transfer' : (newTransaction.direction === 'in' || rawType === 'income' ? 'income' : 'expense');
 
-      const idempotencyKey = newTransaction.bank_reference || `TXN:${user.id}:${Date.now()}:${Math.random().toString(36).substring(2, 9)}`;
+      const txId = (newTransaction as any).id || (newTransaction as any).client_id || crypto.randomUUID();
+      const idempotencyKey = newTransaction.bank_reference || (newTransaction as any).idempotency_key || `TXN:${txId}`;
 
       const res = await recordFinancialTransaction(supabase as any, {
         userId: user.id,
@@ -164,11 +165,37 @@ export function useUpdateTransaction() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: string } & any) => {
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData.user) throw new Error('Not authenticated');
+
+      // Disallow direct mutation of core financial fields; financial corrections must be reversed/re-entered
+      const {
+        amount,
+        account_id,
+        user_id,
+        date,
+        direction,
+        type,
+        transaction_type,
+        category_id,
+        subcategory_id,
+        status,
+        bank_reference,
+        upi_reference,
+        linked_transaction_id,
+        counterparty_id,
+        related_person_id,
+        related_ipo_id,
+        related_investment_id,
+        ...safeUpdates
+      } = updates;
+
       const { data, error } = await supabase
         .from('transactions')
         // @ts-ignore
-        .update(updates as any)
+        .update(safeUpdates as any)
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .select()
         .single();
       
@@ -193,10 +220,38 @@ export function useDeleteTransaction() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      // Fetch transaction to inspect linked ledger entry
+      const { data: tx, error: fetchErr } = await (supabase.from('transactions') as any)
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      // Extract linked journal entry ID if present in notes
+      const journalMatch = tx?.notes?.match(/\[Ledger:\s*([0-9a-fA-F-]+)\]/);
+      const journalEntryId = journalMatch ? journalMatch[1] : null;
+
+      if (journalEntryId) {
+        const revResult = await reverseFinancialTransaction(supabase as any, {
+          userId: userData.user.id,
+          journalEntryId,
+          reason: 'Transaction deleted by user',
+          idempotencyKey: `REV:DEL:${id}`,
+        });
+
+        if (!revResult.success) {
+          console.warn('Reversal warning during transaction deletion:', revResult.error);
+        }
+      }
+
       const { error } = await supabase
         .from('transactions')
         // @ts-ignore
-        .update({ is_deleted: true } as any) // Soft delete
+        .update({ is_deleted: true, status: 'cancelled' } as any) // Soft delete & cancel
         .eq('id', id);
       
       if (error) throw error;
@@ -205,7 +260,8 @@ export function useDeleteTransaction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      toast.success('Transaction deleted');
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      toast.success('Transaction deleted and reversed');
     },
     onError: (error) => {
       toast.error('Failed to delete transaction: ' + error.message);

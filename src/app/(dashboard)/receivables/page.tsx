@@ -70,8 +70,8 @@ export default function ReceivablesPage() {
               receivables?.map((item: any) => {
                 const personName = item.counterparties?.name || item.people?.name || 'Unknown Person';
                 const amount = new Decimal(item.original_amount || item.amount || 0);
-                const remaining = new Decimal(item.remaining_amount || amount);
-                const isOverdue = item.due_date && new Date(item.due_date) < new Date() && item.status !== 'settled';
+                const remaining = new Decimal(item.authoritativeRemaining ?? 0);
+                const isOverdue = item.due_date && new Date(item.due_date) < new Date() && remaining.gt(0);
 
                 return (
                   <tr key={item.id} className="hover:bg-muted/30">
@@ -90,14 +90,14 @@ export default function ReceivablesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <Badge variant={
-                        item.status === 'settled' ? 'default' : 
+                        remaining.lte(0) || item.status === 'settled' ? 'default' : 
                         isOverdue ? 'destructive' : 'secondary'
                       }>
-                        {isOverdue ? 'OVERDUE' : item.status}
+                        {remaining.lte(0) || item.status === 'settled' ? 'SETTLED' : isOverdue ? 'OVERDUE' : (item.status || 'PENDING').toUpperCase()}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {item.status !== 'settled' && (
+                      {!remaining.lte(0) && item.status !== 'settled' && (
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             size="sm"

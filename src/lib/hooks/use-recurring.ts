@@ -13,9 +13,13 @@ export function useRecurringTransactions() {
   return useQuery({
     queryKey: ['recurring'],
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase.from('recurring_transactions') as any)
         .select('*, account:accounts(id,name), category:categories(id,name,icon)')
         .eq('is_active', true)
+        .eq('user_id', user.id)
         .order('next_due_date', { ascending: true });
       if (error) throw error;
       return (data || []) as any[];
@@ -30,7 +34,8 @@ export function useCreateRecurring() {
     mutationFn: async (payload: any) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-      const { error } = await (supabase.from('recurring_transactions') as any).insert({ ...payload, user_id: user.id });
+      const { user_id, ...safePayload } = payload;
+      const { error } = await (supabase.from('recurring_transactions') as any).insert({ ...safePayload, user_id: user.id });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -46,7 +51,13 @@ export function useUpdateRecurring() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...payload }: any) => {
-      const { error } = await (supabase.from('recurring_transactions') as any).update(payload).eq('id', id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { user_id, ...safePayload } = payload;
+      const { error } = await (supabase.from('recurring_transactions') as any)
+        .update(safePayload)
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -62,7 +73,12 @@ export function useDeleteRecurring() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase.from('recurring_transactions') as any).delete().eq('id', id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await (supabase.from('recurring_transactions') as any)
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -122,7 +138,8 @@ export function useMarkRecurringDone() {
           is_active: isPastEnd ? false : recurring.is_active,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', recurring.id);
+        .eq('id', recurring.id)
+        .eq('user_id', user.id);
 
       if (updateError) throw updateError;
     },

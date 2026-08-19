@@ -20,17 +20,17 @@ import {
   Calendar,
   AlertCircle,
   RotateCcw,
+  Landmark,
+  TrendingUp,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { createClient } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAccounts } from '@/lib/hooks/use-accounts';
-import { usePeople } from '@/lib/hooks/use-people';
-import { recordFinancialTransaction } from '@/lib/ledger/service';
 import { formatINR } from '@/lib/finance/money';
 import { toast } from 'sonner';
+import { executeAIFinancialAction, AIFinancialActionPayload, AIActionType } from '@/lib/ledger/ai';
 
 interface ChatMessage {
   id: string;
@@ -39,28 +39,59 @@ interface ChatMessage {
   isError?: boolean;
 }
 
-interface ParsedAction {
-  actionType: 'transaction' | 'payable' | 'receivable';
-  amount: number;
-  description?: string;
-  type?: 'expense' | 'income' | 'transfer';
-  direction?: 'in' | 'out';
-  accountName?: string;
-  accountId?: string;
-  personName?: string;
-  personId?: string;
-  date?: string;
-  notes?: string;
-}
-
 const SUGGESTIONS = [
   'Paid ₹350 for lunch from Kotak',
   'I borrowed ₹5,000 from Rahul',
   'Lent ₹2,000 to Amit',
-  'How much did I spend this month?',
+  'Paid EMI ₹15,000 for Car Loan from HDFC',
 ];
 
-function extractActionAndText(content: string): { cleanText: string; action: ParsedAction | null } {
+function normalizeActionPayload(raw: any): AIFinancialActionPayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  let actionType: AIActionType = raw.actionType || 'expense';
+
+  // Map legacy action types for backwards compatibility
+  if (raw.actionType === 'payable') actionType = 'borrowing';
+  else if (raw.actionType === 'receivable') actionType = 'lending';
+  else if (raw.actionType === 'transaction') {
+    if (raw.type === 'income' || raw.direction === 'in') actionType = 'income';
+    else if (raw.type === 'transfer') actionType = 'transfer';
+    else actionType = 'expense';
+  }
+
+  return {
+    actionType,
+    actionId: raw.actionId || raw.id,
+    amount: raw.amount || 0,
+    currency: raw.currency || 'INR',
+    description: raw.description,
+    date: raw.date,
+    notes: raw.notes,
+    accountId: raw.accountId,
+    accountName: raw.accountName,
+    toAccountId: raw.toAccountId,
+    toAccountName: raw.toAccountName,
+    personId: raw.personId,
+    personName: raw.personName,
+    repaymentId: raw.repaymentId,
+    loanId: raw.loanId,
+    loanName: raw.loanName,
+    principalAmount: raw.principalAmount,
+    interestAmount: raw.interestAmount,
+    assetSymbol: raw.assetSymbol,
+    assetName: raw.assetName,
+    quantity: raw.quantity,
+    pricePerUnit: raw.pricePerUnit,
+    holdingAccountId: raw.holdingAccountId,
+    costBasis: raw.costBasis,
+    realizedGainLoss: raw.realizedGainLoss,
+    originalJournalEntryId: raw.originalJournalEntryId,
+    reversalReason: raw.reversalReason,
+  };
+}
+
+function extractActionAndText(content: string): { cleanText: string; action: AIFinancialActionPayload | null } {
   const match = content.match(/\[ACTION\]([\s\S]*?)\[\/ACTION\]/);
   if (!match) {
     return { cleanText: content, action: null };
@@ -70,7 +101,8 @@ function extractActionAndText(content: string): { cleanText: string; action: Par
   const cleanText = content.replace(/\[ACTION\][\s\S]*?\[\/ACTION\]/, '').trim();
 
   try {
-    const action = JSON.parse(rawJson) as ParsedAction;
+    const rawAction = JSON.parse(rawJson);
+    const action = normalizeActionPayload(rawAction);
     return { cleanText, action };
   } catch {
     return { cleanText, action: null };
@@ -90,8 +122,6 @@ export function CompanionDrawer() {
   const recognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
-  const { data: accounts } = useAccounts();
-  const { data: people } = usePeople();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -201,14 +231,12 @@ export function CompanionDrawer() {
     const assistantMessageId = `assistant-${Date.now()}`;
     const newMessages = [...messages.filter((m) => !m.isError), userMessage];
 
-    // Optimistically add user message and pending assistant message
     setMessages([
       ...newMessages,
       { id: assistantMessageId, role: 'assistant', content: '' },
     ]);
     setIsLoading(true);
 
-    // Setup 35s timeout abort controller
     const controller = new AbortController();
     abortControllerRef.current = controller;
     const timeoutId = setTimeout(() => {
@@ -285,7 +313,6 @@ export function CompanionDrawer() {
         userFacingError = err.message;
       }
 
-      // Display the error inline without deleting the bubble
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
@@ -304,7 +331,7 @@ export function CompanionDrawer() {
     }
   };
 
-  const handleExecuteAction = async (msgId: string, action: ParsedAction) => {
+  const handleExecuteAction = async (msgId: string, action: AIFinancialActionPayload) => {
     setIsExecutingAction((prev) => ({ ...prev, [msgId]: true }));
     const supabase = createClient();
 
@@ -312,124 +339,26 @@ export function CompanionDrawer() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User is not authenticated. Please sign in again.');
 
-      if (action.actionType === 'payable' || action.actionType === 'receivable') {
-        let counterpartyId = action.personId;
+      const result = await executeAIFinancialAction(supabase as any, user.id, msgId, action);
 
-        // If personId is not resolved, find or create person
-        if (!counterpartyId && action.personName) {
-          const matched = people?.find(
-            (p) => p.name.toLowerCase() === action.personName?.toLowerCase()
-          );
-
-          if (matched) {
-            counterpartyId = matched.id;
-          } else {
-            // Create new counterparty
-            const { data: newPerson, error: pError } = await (supabase.from('counterparties') as any)
-              .insert({
-                user_id: user.id,
-                name: action.personName,
-                type: 'Other',
-              })
-              .select()
-              .single();
-
-            if (pError) throw pError;
-            counterpartyId = newPerson.id;
-            queryClient.invalidateQueries({ queryKey: ['people'] });
-          }
-        }
-
-        if (!counterpartyId) {
-          throw new Error('Counterparty / Person is required for this action.');
-        }
-
-        const fallbackAccountId = accounts && accounts.length > 0 ? accounts[0].id : null;
-        if (!fallbackAccountId) {
-          throw new Error('An active bank or cash account is required to record this entry.');
-        }
-
-        const isBorrowing = action.actionType === 'payable';
-        const ledgerRes = await recordFinancialTransaction(supabase as any, {
-          userId: user.id,
-          type: isBorrowing ? 'borrowing' : 'lending',
-          accountId: fallbackAccountId,
-          counterpartyId,
-          amount: Number(action.amount),
-          date: action.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          description: action.description || (isBorrowing ? `Borrowed from ${action.personName || 'person'}` : `Lent to ${action.personName || 'person'}`),
-          notes: action.notes || null,
-          idempotencyKey: `AI:${user.id}:${msgId}:people`,
-          sourceType: 'ai_action',
-        });
-
-        if (!ledgerRes.success) throw new Error(ledgerRes.error || 'Failed to record entry in ledger');
-
-        const table = isBorrowing ? 'payables' : 'receivables';
-        await (supabase.from(table) as any).insert({
-          user_id: user.id,
-          counterparty_id: counterpartyId,
-          amount: Number(action.amount),
-          notes: action.description || action.notes || null,
-          due_date: action.date || null,
-          status: 'PENDING',
-        });
-
-        queryClient.invalidateQueries({ queryKey: ['payables'] });
-        queryClient.invalidateQueries({ queryKey: ['receivables'] });
-        queryClient.invalidateQueries({ queryKey: ['people'] });
-        queryClient.invalidateQueries({ queryKey: ['accounts'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
-
-        toast.success(
-          isBorrowing
-            ? `Recorded borrowing of ${formatINR(action.amount)} from ${action.personName || 'person'} in ledger`
-            : `Recorded receivable of ${formatINR(action.amount)} from ${action.personName || 'person'} in ledger`
-        );
-      } else {
-        // Transaction action
-        let targetAccountId = action.accountId;
-        if (!targetAccountId && action.accountName) {
-          const matched = accounts?.find(
-            (a) => a.name.toLowerCase().includes(action.accountName?.toLowerCase() || '')
-          );
-          if (matched) targetAccountId = matched.id;
-        }
-
-        // Fallback to first active account
-        if (!targetAccountId && accounts && accounts.length > 0) {
-          targetAccountId = accounts[0].id;
-        }
-
-        if (!targetAccountId) {
-          throw new Error('No account found. Please create an account first.');
-        }
-
-        const dir = action.direction || (action.type === 'income' ? 'in' : 'out');
-        const txType = action.type === 'transfer' ? 'transfer' : (dir === 'in' || action.type === 'income' ? 'income' : 'expense');
-
-        const ledgerRes = await recordFinancialTransaction(supabase as any, {
-          userId: user.id,
-          type: txType,
-          accountId: targetAccountId,
-          categoryId: (action as any).categoryId || null,
-          amount: Number(action.amount),
-          date: action.date ? new Date(action.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          description: action.description || 'Transaction via AI Assistant',
-          notes: action.notes || null,
-          idempotencyKey: `AI:${user.id}:${msgId}:tx`,
-          sourceType: 'ai_action',
-        });
-
-        if (!ledgerRes.success) throw new Error(ledgerRes.error || 'Failed to post transaction to ledger');
-
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-        queryClient.invalidateQueries({ queryKey: ['accounts'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
-
-        toast.success(`Recorded ${txType} of ${formatINR(action.amount)} in ledger!`);
+      if (!result.success) {
+        throw new Error(result.error || result.message || 'Failed to execute financial action');
       }
 
+      // Invalidate all related caches
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['people'] });
+      queryClient.invalidateQueries({ queryKey: ['people_ledger_summary'] });
+      queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      queryClient.invalidateQueries({ queryKey: ['receivables-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['payables'] });
+      queryClient.invalidateQueries({ queryKey: ['payables-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['investments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+
+      toast.success(result.message);
       setActionStatuses((prev) => ({ ...prev, [msgId]: 'success' }));
     } catch (err: any) {
       console.error('Failed to execute action:', err);
@@ -457,9 +386,37 @@ export function CompanionDrawer() {
     setActionStatuses({});
   };
 
+  const renderBadge = (action: AIFinancialActionPayload) => {
+    switch (action.actionType) {
+      case 'lending':
+        return <Badge className="text-[10px] uppercase font-semibold bg-emerald-600">Lent Money (Receivable)</Badge>;
+      case 'borrowing':
+        return <Badge variant="destructive" className="text-[10px] uppercase font-semibold">Borrowed Money (Payable)</Badge>;
+      case 'receivable_repayment':
+        return <Badge className="text-[10px] uppercase font-semibold bg-emerald-600">Receivable Repayment</Badge>;
+      case 'payable_repayment':
+        return <Badge variant="destructive" className="text-[10px] uppercase font-semibold">Payable Repayment</Badge>;
+      case 'loan_emi':
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950">Loan EMI Payment</Badge>;
+      case 'income':
+      case 'investment_dividend':
+        return <Badge className="text-[10px] uppercase font-semibold bg-emerald-600">Income Entry</Badge>;
+      case 'transfer':
+        return <Badge variant="outline" className="text-[10px] uppercase font-semibold text-blue-600">Account Transfer</Badge>;
+      case 'investment_buy':
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600">Investment Buy</Badge>;
+      case 'investment_sell':
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600">Investment Sell</Badge>;
+      case 'reversal':
+        return <Badge variant="destructive" className="text-[10px] uppercase font-semibold">Reversal / Correction</Badge>;
+      default:
+        return <Badge variant="outline" className="text-[10px] uppercase font-semibold">Expense Entry</Badge>;
+    }
+  };
+
   return (
     <>
-      {/* Floating trigger button — adjusted to sit above mobile bottom nav */}
+      {/* Floating trigger button */}
       <Button
         size="icon"
         onClick={() => setOpen(true)}
@@ -512,7 +469,7 @@ export function CompanionDrawer() {
                 <div className="space-y-1">
                   <p className="font-semibold text-sm">Finance Assistant & Voice Logger</p>
                   <p className="text-xs text-muted-foreground max-w-[240px]">
-                    Ask about your finances, or use voice/text to log expenses, income, borrowings & lent money.
+                    Ask about your finances, or use voice/text to log expenses, income, debts & loan EMIs.
                   </p>
                 </div>
                 <div className="w-full space-y-2 max-w-sm">
@@ -603,26 +560,10 @@ export function CompanionDrawer() {
                       <div className="w-full mt-1 rounded-xl border border-border bg-card text-card-foreground p-3 shadow-sm space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            {action.actionType === 'payable' ? (
-                              <Badge variant="destructive" className="text-[10px] uppercase font-semibold">
-                                Borrowed Money (Payable)
-                              </Badge>
-                            ) : action.actionType === 'receivable' ? (
-                              <Badge variant="default" className="text-[10px] uppercase font-semibold bg-emerald-600">
-                                Lent Money (Receivable)
-                              </Badge>
-                            ) : action.type === 'income' ? (
-                              <Badge variant="default" className="text-[10px] uppercase font-semibold bg-emerald-600">
-                                Income Entry
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] uppercase font-semibold">
-                                Expense Entry
-                              </Badge>
-                            )}
+                            {renderBadge(action)}
                           </div>
                           <span className="text-xs font-bold text-foreground">
-                            {formatINR(action.amount)}
+                            {formatINR(Number(action.amount))}
                           </span>
                         </div>
 
@@ -640,6 +581,18 @@ export function CompanionDrawer() {
                             <div className="flex items-center gap-1">
                               <Wallet className="h-3 w-3 text-muted-foreground" />
                               <span>Account: <strong className="text-foreground">{action.accountName}</strong></span>
+                            </div>
+                          )}
+                          {action.loanName && (
+                            <div className="flex items-center gap-1">
+                              <Landmark className="h-3 w-3 text-muted-foreground" />
+                              <span>Loan: <strong className="text-foreground">{action.loanName}</strong></span>
+                            </div>
+                          )}
+                          {action.assetSymbol && (
+                            <div className="flex items-center gap-1">
+                              <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                              <span>Asset: <strong className="text-foreground">{action.assetSymbol}</strong></span>
                             </div>
                           )}
                           {action.date && (
@@ -662,12 +615,12 @@ export function CompanionDrawer() {
                               {isExecuting ? (
                                 <>
                                   <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                                  Adding…
+                                  Posting to Ledger…
                                 </>
                               ) : (
                                 <>
                                   <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                  Confirm & Add
+                                  Confirm & Post to Ledger
                                 </>
                               )}
                             </Button>
@@ -684,7 +637,7 @@ export function CompanionDrawer() {
                         ) : actionStatus === 'success' ? (
                           <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-1 border-t border-border">
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            Successfully recorded into your database!
+                            Confirmed and recorded into authoritative double-entry ledger!
                           </div>
                         ) : (
                           <div className="text-xs text-muted-foreground italic pt-1 border-t border-border">
@@ -769,7 +722,7 @@ export function CompanionDrawer() {
               </Button>
             </form>
             <p className="text-[10px] text-muted-foreground text-center mt-2">
-              Speak or type to log transactions & debts · Review before confirming
+              Review & confirm before posting to double-entry ledger
             </p>
           </div>
         </SheetContent>

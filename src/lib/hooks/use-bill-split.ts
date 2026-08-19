@@ -4,6 +4,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Decimal from "decimal.js";
+import { recordLending } from "@/lib/ledger/people";
+import { recordFinancialTransaction } from "@/lib/ledger/service";
+
+Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
 export interface SplitParticipant {
   personId: string;
@@ -29,57 +33,70 @@ export function useCreateBillSplit() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const total = new Decimal(input.totalAmount);
-      const createdReceivables = [];
+      const totalBill = new Decimal(input.totalAmount);
+      let participantSum = new Decimal(0);
 
-      // 1. Create a primary expense transaction for the full bill
-      const { data: mainTx, error: txError } = await (supabase.from("transactions") as any)
-        .insert([{
-          user_id: user.id,
-          account_id: input.paidByAccountId,
-          transaction_type: "expense",
-          direction: "out",
-          amount: total.toNumber(),
-          date: input.date,
-          description: `Bill Split: ${input.title}`,
-          ownership: "personal",
-          status: "confirmed",
-          notes: input.notes,
-        }])
-        .select()
-        .single();
-
-      if (txError) throw txError;
-
-      // 2. Create receivables for each participant who owes money
       for (const p of input.participants) {
         if (p.amount > 0) {
-          const { data: rec, error: recError } = await (supabase.from("receivables") as any)
-            .insert([{
-              user_id: user.id,
-              counterparty_id: p.personId,
-              original_amount: p.amount,
-              remaining_amount: p.amount,
-              reason: `Bill Split: ${input.title}`,
-              due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days default
-              status: "pending",
-              notes: `Split from transaction ID: ${mainTx?.id || ''}`,
-            }])
-            .select()
-            .single();
-
-          if (recError) console.warn("Failed to create receivable for split participant:", recError);
-          else createdReceivables.push(rec);
+          participantSum = participantSum.plus(new Decimal(p.amount));
         }
       }
 
-      return { mainTx, createdReceivables };
+      const userShare = totalBill.minus(participantSum);
+      const createdEntries = [];
+      const splitGroupId = `split-${Date.now()}`;
+
+      // 1. Authoritatively record the user's personal expense share if > 0
+      if (userShare.gt(0)) {
+        const expenseRes = await recordFinancialTransaction(supabase as any, {
+          userId: user.id,
+          type: "expense",
+          accountId: input.paidByAccountId,
+          amount: userShare.toFixed(2),
+          date: input.date,
+          description: `Bill Split (My Share): ${input.title}`,
+          notes: input.notes,
+          idempotencyKey: `SPLIT:EXP:${splitGroupId}:${user.id}`,
+        });
+
+        if (!expenseRes.success) {
+          throw new Error(`Failed to record user share of bill: ${expenseRes.error}`);
+        }
+        createdEntries.push(expenseRes.journalEntryId);
+      }
+
+      // 2. Authoritatively record lending (receivable) to each participant via People Ledger
+      for (const p of input.participants) {
+        if (p.amount > 0) {
+          const lendRes = await recordLending(supabase as any, {
+            userId: user.id,
+            accountId: input.paidByAccountId,
+            counterpartyId: p.personId,
+            amount: new Decimal(p.amount).toFixed(2),
+            date: input.date,
+            description: `Bill Split (${p.personName}): ${input.title}`,
+            notes: input.notes ? `${input.notes} [Split: ${input.title}]` : `Split: ${input.title}`,
+            receivableId: `rec-${splitGroupId}-${p.personId}`,
+          });
+
+          if (!lendRes.success) {
+            throw new Error(`Failed to record receivable for ${p.personName}: ${lendRes.error}`);
+          }
+          createdEntries.push(lendRes.journalEntryId);
+        }
+      }
+
+      return { success: true, entryCount: createdEntries.length };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["receivables"] });
+      queryClient.invalidateQueries({ queryKey: ["receivables-summary"] });
       queryClient.invalidateQueries({ queryKey: ["people"] });
-      toast.success("Bill split successfully! Receivables have been created.");
+      queryClient.invalidateQueries({ queryKey: ["people_ledger_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      toast.success("Bill split recorded successfully in double-entry ledger!");
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to split bill");

@@ -1,11 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -18,6 +15,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { useAccounts } from "@/lib/hooks/use-accounts";
+import { useCreateLoan } from "@/lib/hooks/use-loans";
+import { formatINR } from "@/lib/finance/money";
+import { Loader2 } from "lucide-react";
 
 const loanSchema = z.object({
   name: z.string().min(1, "Loan name is required"),
@@ -26,14 +27,15 @@ const loanSchema = z.object({
   principal_amount: z.number().positive("Amount must be positive"),
   interest_rate: z.number().positive("Interest rate must be positive"),
   tenure_months: z.number().int().positive("Tenure must be positive"),
-  start_date: z.string(),
+  start_date: z.string().min(1, "Start date is required"),
+  deposit_account_id: z.string().optional(),
 });
 
 type LoanFormValues = z.infer<typeof loanSchema>;
 
 export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const supabase = createClient();
+  const { data: accounts, isLoading: accountsLoading } = useAccounts();
+  const { mutateAsync: createLoan, isPending: isSubmitting } = useCreateLoan();
 
   const form = useForm<LoanFormValues>({
     resolver: zodResolver(loanSchema),
@@ -45,37 +47,27 @@ export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
       interest_rate: 10.5,
       tenure_months: 60,
       start_date: new Date().toISOString().split("T")[0],
+      deposit_account_id: "",
     },
   });
 
   async function onSubmit(data: LoanFormValues) {
-    setIsSubmitting(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
-      const { error } = await (supabase.from("loans") as any).insert({
-        user_id: userData.user.id,
+      await createLoan({
         name: data.name,
-        loan_type: data.type,
-        lender_name: data.lender,
+        type: data.type,
+        lender: data.lender,
         principal_amount: data.principal_amount,
         interest_rate: data.interest_rate,
         tenure_months: data.tenure_months,
         start_date: data.start_date,
-        remaining_principal: data.principal_amount,
-        status: "active",
+        deposit_account_id: data.deposit_account_id || (accounts && accounts.length > 0 ? accounts[0].id : undefined),
       });
 
-      if (error) throw error;
-      
-      toast.success("Loan added successfully");
       form.reset();
       onSuccess?.();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to add loan");
-    } finally {
-      setIsSubmitting(false);
+    } catch {
+      // Handled in hook toast
     }
   }
 
@@ -143,7 +135,7 @@ export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
             name="principal_amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Principal Amount</FormLabel>
+                <FormLabel>Principal Amount (₹)</FormLabel>
                 <FormControl>
                   <CurrencyInput
                     value={field.value}
@@ -160,13 +152,13 @@ export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
             name="interest_rate"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Interest Rate (%)</FormLabel>
+                <FormLabel>Interest Rate (% p.a.)</FormLabel>
                 <FormControl>
                   <Input 
                     type="number" 
                     step="0.01" 
                     {...field} 
-                    onChange={e => field.onChange(parseFloat(e.target.value))} 
+                    onChange={e => field.onChange(parseFloat(e.target.value) || 0)} 
                   />
                 </FormControl>
                 <FormMessage />
@@ -184,7 +176,7 @@ export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
                   <Input 
                     type="number" 
                     {...field} 
-                    onChange={e => field.onChange(parseInt(e.target.value))} 
+                    onChange={e => field.onChange(parseInt(e.target.value) || 1)} 
                   />
                 </FormControl>
                 <FormMessage />
@@ -193,23 +185,57 @@ export function LoanForm({ onSuccess }: { onSuccess?: () => void }) {
           />
         </div>
 
-        <FormField
-          control={form.control}
-          name="start_date"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Start Date</FormLabel>
-              <FormControl>
-                <Input type="date" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="start_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Disbursement / Start Date</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="deposit_account_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Disbursement Deposit Account</FormLabel>
+                <FormControl>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={accountsLoading}
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value)}
+                  >
+                    <option value="">Default Active Account</option>
+                    {accounts?.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name} ({formatINR(acc.balance || 0)})
+                      </option>
+                    ))}
+                  </select>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="flex justify-end pt-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Add Loan"}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Provisioning Ledger...
+              </>
+            ) : (
+              "Add Loan & Disburse"
+            )}
           </Button>
         </div>
       </form>

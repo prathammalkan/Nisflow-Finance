@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import Decimal from 'decimal.js';
-import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
+import { startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { getPeopleAuthoritativeSummary } from '@/lib/ledger/people';
+import { getAuthoritativeDashboardStats, getAuthoritativeSpendingByCategory } from '@/lib/ledger/analytics';
+
+Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
 function getDateRange(range: string): { start: string; end: string } {
   const now = new Date();
@@ -32,37 +36,73 @@ export function usePersonalFinanceReport(dateRange: string) {
   return useQuery({
     queryKey: ['report-personal-finance', dateRange],
     queryFn: async () => {
-      const { start, end } = getDateRange(dateRange);
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData.user) throw new Error('Not authenticated');
 
-      const [{ data: txns }, { data: accounts }, { data: receivables }, { data: payables }] =
-        await Promise.all([
-          supabase.from('transactions').select('amount, type').gte('date', start).lte('date', end),
-          supabase.from('accounts').select('balance, ownership, type').eq('is_active', true),
-          supabase.from('receivables').select('remaining_amount').neq('status', 'settled'),
-          supabase.from('payables').select('remaining_amount').neq('status', 'settled'),
-        ]);
+      const { start, end } = getDateRange(dateRange);
+      const startStr = start.split('T')[0];
+      const endStr = end.split('T')[0];
+
+      // 1. Fetch ledger accounts and journal lines for the user
+      const [
+        { data: ledgerAccounts, error: laErr },
+        { data: lines, error: linesErr },
+        stats
+      ] = await Promise.all([
+        (supabase.from('ledger_accounts') as any).select('*').eq('user_id', userData.user.id),
+        (supabase.from('journal_lines') as any).select(`
+          id,
+          ledger_account_id,
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            id,
+            transaction_date,
+            status,
+            user_id
+          )
+        `)
+          .eq('user_id', userData.user.id)
+          .eq('journal_entries.status', 'posted')
+          .gte('journal_entries.transaction_date', startStr)
+          .lte('journal_entries.transaction_date', endStr),
+        getAuthoritativeDashboardStats(supabase as any, userData.user.id, start, end)
+      ]);
+
+      if (laErr) throw new Error(`Failed to query ledger accounts: ${laErr.message}`);
+      if (linesErr) throw new Error(`Failed to query journal lines: ${linesErr.message}`);
+
+      const laTypeMap = new Map<string, string>();
+      for (const la of ledgerAccounts || []) {
+        laTypeMap.set(la.id, la.account_type);
+      }
 
       let income = new Decimal(0);
       let expenses = new Decimal(0);
       let savings = new Decimal(0);
       let investments = new Decimal(0);
-      let netWorth = new Decimal(0);
 
-      (txns as any[] || []).forEach((t) => {
-        const amt = new Decimal(t.amount || 0);
-        if (t.type === 'income') income = income.plus(amt);
-        if (t.type === 'expense') expenses = expenses.plus(amt);
-        if (t.type === 'savings') savings = savings.plus(amt);
-        if (t.type === 'investment') investments = investments.plus(amt);
-      });
+      for (const line of lines || []) {
+        const type = laTypeMap.get(line.ledger_account_id);
+        const debits = new Decimal(line.debit_amount || 0);
+        const credits = new Decimal(line.credit_amount || 0);
 
-      (accounts as any[] || []).forEach((a) => {
-        if (a.ownership === 'personal') netWorth = netWorth.plus(new Decimal(a.balance || 0));
-      });
-      (receivables as any[] || []).forEach((r) => netWorth = netWorth.plus(new Decimal(r.remaining_amount || 0)));
-      (payables as any[] || []).forEach((p) => netWorth = netWorth.minus(new Decimal(p.remaining_amount || 0)));
+        if (type === 'income') {
+          income = income.plus(credits.minus(debits));
+        } else if (type === 'expense') {
+          expenses = expenses.plus(debits.minus(credits));
+        }
+      }
 
-      return { income, expenses, savings, investments, netWorth };
+      const netWorth = new Decimal(stats.personalNetWorth);
+
+      return {
+        income: Decimal.max(0, income),
+        expenses: Decimal.max(0, expenses),
+        savings,
+        investments,
+        netWorth,
+      };
     },
   });
 }
@@ -73,23 +113,67 @@ export function useAccountReport(accountId: string, dateRange: string) {
     queryKey: ['report-account', accountId, dateRange],
     enabled: !!accountId,
     queryFn: async () => {
-      const { start } = getDateRange(dateRange);
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData.user) throw new Error('Not authenticated');
 
-      const [{ data: account }, { data: txns }] = await Promise.all([
-        supabase.from('accounts').select('balance').eq('id', accountId).single(),
-        supabase.from('transactions').select('amount, type, date').eq('account_id', accountId).gte('date', start),
-      ]);
+      const { start, end } = getDateRange(dateRange);
+      const startStr = start.split('T')[0];
+      const endStr = end.split('T')[0];
 
+      // Find ledger account AST-ACC-<accountId>
+      const { data: la } = await (supabase.from('ledger_accounts') as any)
+        .select('id')
+        .eq('user_id', userData.user.id)
+        .eq('code', `AST-ACC-${accountId}`)
+        .maybeSingle();
+
+      if (!la) {
+        return {
+          opening: new Decimal(0),
+          inflows: new Decimal(0),
+          outflows: new Decimal(0),
+          closing: new Decimal(0),
+        };
+      }
+
+      // Query all posted journal lines for this asset account
+      const { data: lines, error } = await (supabase.from('journal_lines') as any)
+        .select(`
+          id,
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            id,
+            transaction_date,
+            status,
+            user_id
+          )
+        `)
+        .eq('user_id', userData.user.id)
+        .eq('ledger_account_id', la.id)
+        .eq('journal_entries.status', 'posted');
+
+      if (error) throw new Error(`Failed to query account report: ${error.message}`);
+
+      let closing = new Decimal(0);
       let inflows = new Decimal(0);
       let outflows = new Decimal(0);
 
-      (txns as any[] || []).forEach((t) => {
-        const amt = new Decimal(t.amount || 0);
-        if (t.type === 'income') inflows = inflows.plus(amt);
-        if (t.type === 'expense') outflows = outflows.plus(amt);
-      });
+      for (const line of lines || []) {
+        const d = new Decimal(line.debit_amount || 0);
+        const c = new Decimal(line.credit_amount || 0);
+        const txDate = line.journal_entries.transaction_date;
 
-      const closing = new Decimal((account as any)?.balance || 0);
+        // Cumulative closing balance
+        closing = closing.plus(d.minus(c));
+
+        // Inflows and outflows in date range
+        if (txDate >= startStr && txDate <= endStr) {
+          inflows = inflows.plus(d);
+          outflows = outflows.plus(c);
+        }
+      }
+
       const opening = closing.minus(inflows).plus(outflows);
 
       return { opening, inflows, outflows, closing };
@@ -102,23 +186,24 @@ export function useSpendingReport(dateRange: string) {
   return useQuery({
     queryKey: ['report-spending', dateRange],
     queryFn: async () => {
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData.user) throw new Error('Not authenticated');
+
       const { start, end } = getDateRange(dateRange);
-      const { data } = await supabase
-        .from('transactions')
-        .select('amount, category:categories(name)')
-        .eq('type', 'expense')
-        .gte('date', start)
-        .lte('date', end);
+      const startStr = start.split('T')[0];
+      const endStr = end.split('T')[0];
 
-      const map = new Map<string, Decimal>();
-      (data as any[] || []).forEach((t) => {
-        const cat = t.category?.name || 'Uncategorized';
-        map.set(cat, (map.get(cat) || new Decimal(0)).plus(new Decimal(t.amount || 0)));
-      });
+      const list = await getAuthoritativeSpendingByCategory(
+        supabase as any,
+        userData.user.id,
+        startStr,
+        endStr
+      );
 
-      return Array.from(map.entries())
-        .map(([category, amount]) => ({ category, amount }))
-        .sort((a, b) => b.amount.comparedTo(a.amount));
+      return list.map((item) => ({
+        category: item.name,
+        amount: new Decimal(item.value),
+      }));
     },
   });
 }
@@ -128,7 +213,13 @@ export function useThirdPartyReport(dateRange: string) {
   return useQuery({
     queryKey: ['report-third-party', dateRange],
     queryFn: async () => {
-      const { data } = await supabase.from('third_party_funds').select('amount, amount_used, amount_returned, status');
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data } = await supabase
+        .from('third_party_funds')
+        .select('amount, amount_used, amount_returned, status')
+        .eq('user_id', userData.user.id);
 
       let received = new Decimal(0);
       let used = new Decimal(0);
@@ -153,7 +244,14 @@ export function useIPOReport() {
   return useQuery({
     queryKey: ['report-ipo'],
     queryFn: async () => {
-      const { data } = await supabase.from('ipo_applications').select('*, ipo:ipos(name, issue_price)');
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data } = await supabase
+        .from('ipo_applications')
+        .select('*, ipo:ipos(name, issue_price)')
+        .eq('user_id', userData.user.id);
+
       return (data as any[] || []).map((app) => ({
         name: app.ipo?.name || 'Unknown IPO',
         applied: new Decimal(app.applied_amount || 0),
@@ -171,7 +269,13 @@ export function useInvestmentReport() {
   return useQuery({
     queryKey: ['report-investment'],
     queryFn: async () => {
-      const { data } = await supabase.from('investments').select('invested_amount, current_value, name, type');
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data } = await supabase
+        .from('investments')
+        .select('invested_amount, current_value, name, type')
+        .eq('user_id', userData.user.id);
 
       let totalInvested = new Decimal(0);
       let currentValue = new Decimal(0);
@@ -192,18 +296,15 @@ export function usePeopleReport() {
   return useQuery({
     queryKey: ['report-people'],
     queryFn: async () => {
-      const [{ data: recv }, { data: pay }] = await Promise.all([
-        supabase.from('receivables').select('remaining_amount').neq('status', 'settled'),
-        supabase.from('payables').select('remaining_amount').neq('status', 'settled'),
-      ]);
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData.user) throw new Error('Not authenticated');
 
-      let receivables = new Decimal(0);
-      let payables = new Decimal(0);
+      const summary = await getPeopleAuthoritativeSummary(supabase as any, userData.user.id);
 
-      (recv as any[] || []).forEach((r) => receivables = receivables.plus(new Decimal(r.remaining_amount || 0)));
-      (pay as any[] || []).forEach((p) => payables = payables.plus(new Decimal(p.remaining_amount || 0)));
-
-      return { receivables, payables };
+      return {
+        receivables: new Decimal(summary.totalReceivable),
+        payables: new Decimal(summary.totalPayable),
+      };
     },
   });
 }
@@ -213,7 +314,9 @@ export function useTaxReport(financialYear: string) {
   return useQuery({
     queryKey: ['report-tax', financialYear],
     queryFn: async () => {
-      // FY 2025-26 runs from Apr 2025 to Mar 2026
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
       const parts = financialYear.replace('FY ', '').split('-');
       const fromYear = parseInt(parts[0]);
       const toYear = parseInt(parts[1].length === 2 ? `20${parts[1]}` : parts[1]);
@@ -222,8 +325,8 @@ export function useTaxReport(financialYear: string) {
       const end = new Date(toYear, 2, 31, 23, 59, 59).toISOString(); // March 31
 
       const [{ data: txns }, { data: taxRecords }] = await Promise.all([
-        supabase.from('transactions').select('amount, type, category:categories(name)').gte('date', start).lte('date', end),
-        supabase.from('tax_records').select('*').eq('financial_year', financialYear),
+        supabase.from('transactions').select('amount, type, category:categories(name)').eq('user_id', userData.user.id).gte('date', start).lte('date', end),
+        supabase.from('tax_records').select('*').eq('user_id', userData.user.id).eq('financial_year', financialYear),
       ]);
 
       let totalIncome = new Decimal(0);

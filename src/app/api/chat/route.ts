@@ -2,8 +2,13 @@ import { createGoogle } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
 import Decimal from 'decimal.js';
-
 import { checkChatRateLimit } from '@/lib/security/rate-limit';
+import {
+  getCounterpartyAuthoritativeBalance,
+  getPersonLedgerHistory,
+} from '@/lib/ledger/people';
+import { getLoanAuthoritativeBalance } from '@/lib/ledger/loans';
+import { getAuthoritativeDashboardStats } from '@/lib/ledger/analytics';
 
 export async function POST(req: Request) {
   try {
@@ -73,57 +78,111 @@ export async function POST(req: Request) {
     const [
       { data: accounts },
       { data: counterparties },
-      { data: monthTransactions },
+      { data: loans },
+      { data: holdings },
       { data: recentTransactions },
-      { data: receivables },
-      { data: payables },
+      authStats,
     ] = await Promise.all([
       // Hardened Context: Fetch bounded subsets with minimal required fields (Least-Privilege context)
-      supabase.from('accounts').select('id, name, type, balance').eq('user_id', user.id).eq('is_active', true).limit(50),
+      supabase.from('accounts').select('id, name, type').eq('user_id', user.id).eq('is_active', true).limit(50),
       supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
-      supabase.from('transactions').select('amount, direction, type').eq('user_id', user.id).gte('date', startOfMonth),
+      supabase.from('loans').select('id, name, type, loan_amount').eq('user_id', user.id).limit(20),
+      supabase.from('holdings').select('id, symbol, name, quantity, average_buy_price').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
-      supabase.from('receivables').select('amount, received_amount, status').eq('user_id', user.id).neq('status', 'settled'),
-      supabase.from('payables').select('amount, paid_amount, status').eq('user_id', user.id).neq('status', 'settled'),
+      getAuthoritativeDashboardStats(supabase as any, user.id, startOfMonth, now.toISOString()).catch(() => null),
     ]);
 
-    // Calculate balances
-    let totalCash = new Decimal(0);
-    let totalInvestments = new Decimal(0);
+    const lastUserMsg = [...sanitizedMessages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() || '';
+
+    // 1. Least-Privilege Person Scoping
+    const cpList: Array<{ id: string; name: string }> = (counterparties as any) || [];
+    const matchedPerson = cpList.find((p) =>
+      p.name && lastUserMsg.includes(p.name.toLowerCase())
+    );
+
+    let personSpecificContext = '';
+    if (matchedPerson) {
+      try {
+        const [pBalances, pHistory] = await Promise.all([
+          getCounterpartyAuthoritativeBalance(supabase as any, user.id, matchedPerson.id),
+          getPersonLedgerHistory(supabase as any, user.id, matchedPerson.id),
+        ]);
+
+        const recentLines = (pHistory || []).slice(-5).map(
+          (h) => `- ${h.transactionDate}: ${h.description} | Net Balance: ₹${h.runningNetBalance} (${h.direction})`
+        ).join('\n') || 'No previous transactions.';
+
+        personSpecificContext = `
+TARGET PERSON LEDGER CONTEXT (Authoritative Double-Entry from Ledger):
+- Person: ${matchedPerson.name} (ID: ${matchedPerson.id})
+- Receivable Balance (Amount they owe you): ₹${pBalances.receivableBalance.toFixed(2)}
+- Payable Balance (Amount you owe them): ₹${pBalances.payableBalance.toFixed(2)}
+- Net Position: ₹${pBalances.netBalance.toFixed(2)} (${pBalances.direction})
+- Total Lent: ₹${pBalances.totalLent.toFixed(2)} | Total Received: ₹${pBalances.totalReceived.toFixed(2)}
+- Total Borrowed: ₹${pBalances.totalBorrowed.toFixed(2)} | Total Repaid: ₹${pBalances.totalRepaid.toFixed(2)}
+- Recent Postings:
+${recentLines}
+`;
+      } catch (personErr) {
+        console.warn('Could not load person-specific ledger context:', personErr);
+      }
+    }
+
+    // 2. Least-Privilege Loan Scoping
+    const loanList: Array<{ id: string; name: string; type: string }> = (loans as any) || [];
+    const matchedLoan = loanList.find((l) =>
+      l.name && (lastUserMsg.includes(l.name.toLowerCase()) || lastUserMsg.includes('loan') || lastUserMsg.includes('emi'))
+    );
+
+    let loanSpecificContext = '';
+    if (matchedLoan) {
+      try {
+        const loanBal = await getLoanAuthoritativeBalance(supabase as any, user.id, matchedLoan.id);
+        loanSpecificContext = `
+TARGET LOAN LEDGER CONTEXT (Authoritative Double-Entry from Ledger):
+- Loan: ${loanBal.loanName} (Type: ${matchedLoan.type}, ID: ${matchedLoan.id})
+- Outstanding Principal: ₹${loanBal.outstandingPrincipal.toFixed(2)}
+- Total Disbursed: ₹${loanBal.originalDisbursed.toFixed(2)}
+- Total Principal Repaid: ₹${loanBal.totalPrincipalPaid.toFixed(2)}
+- Total Interest Paid: ₹${loanBal.totalInterestPaid.toFixed(2)}
+`;
+      } catch (loanErr) {
+        console.warn('Could not load loan-specific ledger context:', loanErr);
+      }
+    }
+
+    // 3. Least-Privilege Investment Scoping
+    const holdingList: Array<{ id: string; symbol: string; name: string; quantity: number; average_buy_price: number }> = (holdings as any) || [];
+    const matchedHolding = holdingList.find((h) =>
+      (h.symbol && lastUserMsg.includes(h.symbol.toLowerCase())) ||
+      (h.name && lastUserMsg.includes(h.name.toLowerCase()))
+    );
+
+    let holdingSpecificContext = '';
+    if (matchedHolding) {
+      holdingSpecificContext = `
+TARGET INVESTMENT HOLDING CONTEXT:
+- Asset: ${matchedHolding.symbol} (${matchedHolding.name})
+- Quantity: ${matchedHolding.quantity} units
+- Average Buy Price: ₹${matchedHolding.average_buy_price}
+`;
+    }
+
     const accountsList = (accounts || []).map((acc: any) => {
-      const bal = new Decimal(acc.balance || 0);
-      if (acc.type === 'investment') totalInvestments = totalInvestments.plus(bal);
-      else totalCash = totalCash.plus(bal);
-      return `- ${acc.name} (Type: ${acc.type}, ID: ${acc.id}): ₹${bal.toFixed(2)}`;
+      return `- ${acc.name} (Type: ${acc.type}, ID: ${acc.id})`;
     }).join('\n') || 'No active accounts found.';
 
-    const peopleList = (counterparties || []).map((p: any) => 
-      `- ${p.name} (ID: ${p.id})`
-    ).join('\n') || 'No counterparties recorded yet.';
+    const peopleList = matchedPerson
+      ? `- ${matchedPerson.name} (ID: ${matchedPerson.id}) [Target of inquiry]`
+      : cpList.slice(0, 15).map((p) => `- ${p.name} (ID: ${p.id})`).join('\n') || 'No counterparties recorded yet.';
 
-    // Calculate this month spending & income
-    let monthIncome = new Decimal(0);
-    let monthExpenses = new Decimal(0);
-    (monthTransactions || []).forEach((tx: any) => {
-      const amt = new Decimal(tx.amount || 0);
-      if (tx.direction === 'in') monthIncome = monthIncome.plus(amt);
-      else if (tx.direction === 'out') monthExpenses = monthExpenses.plus(amt);
-    });
-
-    // Calculate outstanding receivables and payables
-    let totalReceivables = new Decimal(0);
-    (receivables || []).forEach((r: any) => {
-      const rem = new Decimal(r.amount || 0).minus(r.received_amount || 0);
-      if (rem.greaterThan(0)) totalReceivables = totalReceivables.plus(rem);
-    });
-
-    let totalPayables = new Decimal(0);
-    (payables || []).forEach((p: any) => {
-      const rem = new Decimal(p.amount || 0).minus(p.paid_amount || 0);
-      if (rem.greaterThan(0)) totalPayables = totalPayables.plus(rem);
-    });
-
-    const netWorth = totalCash.plus(totalInvestments).plus(totalReceivables).minus(totalPayables);
+    const totalCash = new Decimal(authStats?.availablePersonalCash || 0);
+    const totalInvestments = new Decimal(authStats?.totalInvestments || 0);
+    const monthIncome = new Decimal(authStats?.thisMonthIncome || 0);
+    const monthExpenses = new Decimal(authStats?.thisMonthExpenses || 0);
+    const totalReceivables = new Decimal(authStats?.totalReceivables || 0);
+    const totalPayables = new Decimal(authStats?.totalPayables || 0);
+    const netWorth = new Decimal(authStats?.personalNetWorth || 0);
 
     const recentTxList = (recentTransactions || []).map((tx: any) => 
       `- ${tx.date?.substring(0, 10)}: ${tx.direction === 'in' ? '+' : '-'}₹${tx.amount} (${tx.type || 'transaction'}) "${tx.description || 'No description'}"`
@@ -133,9 +192,9 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are NisFlow, a strictly finance-only AI companion built into the NisFlow Finance app.
 
-Your purpose is to help the user understand and manage their personal finances inside this app, including answering inquiries AND helping them record new financial entries (transactions, loans, borrowings, lent money).
+Your purpose is to help the user understand and manage their personal finances inside this app, including answering inquiries AND helping them record new financial entries (transactions, debts, loans, investments).
 
-CURRENT USER LIVE FINANCIAL DATA (Real-time from database):
+CURRENT USER LIVE FINANCIAL DATA (Real-time from double-entry ledger):
 - Today's Date: ${todayDate}
 - Current Month: ${now.toLocaleString('default', { month: 'long', year: 'numeric' })}
 - Total Net Worth: ₹${netWorth.toFixed(2)}
@@ -146,45 +205,57 @@ CURRENT USER LIVE FINANCIAL DATA (Real-time from database):
 - Net Monthly Cashflow: ₹${monthIncome.minus(monthExpenses).toFixed(2)}
 - Total Receivables (Money owed to user): ₹${totalReceivables.toFixed(2)}
 - Total Payables (Money user owes): ₹${totalPayables.toFixed(2)}
-
+${personSpecificContext}${loanSpecificContext}${holdingSpecificContext}
 User Accounts:
 ${accountsList}
 
-User Counterparties / People:
+Known Counterparties / People:
 ${peopleList}
 
 Recent Transactions:
 ${recentTxList}
 
 RECORDING DATA & ACTIONS:
-When the user states that they spent, received, borrowed, or lent money (e.g., "I borrowed ₹5,000 from Rahul", "Paid ₹500 for groceries", "Received ₹20,000 salary in HDFC account", "Lent ₹2,000 to Amit", "Got ₹3,000 from Rohit"), you must:
+When the user states that they spent, received, borrowed, lent money, paid loan EMI, bought/sold investments, or want to reverse an entry (e.g., "Paid ₹350 for lunch from Kotak", "Borrowed ₹5,000 from Rahul", "Lent ₹2,000 to Amit", "Paid EMI ₹15,000 for Car Loan", "Got ₹3,000 repayment from Rohit"), you must:
 1. Provide a short, friendly conversational message confirming what you parsed (1-2 sentences).
 2. At the end of your message, output a strict JSON action block enclosed in [ACTION] and [/ACTION] tags.
 
 Action Block Schema:
 [ACTION]
 {
-  "actionType": "transaction" | "payable" | "receivable",
+  "actionType": "expense" | "income" | "transfer" | "lending" | "borrowing" | "receivable_repayment" | "payable_repayment" | "loan_emi" | "investment_buy" | "investment_sell" | "investment_dividend" | "reversal",
+  "actionId": "<stable action slug, e.g. act-1>",
   "amount": <number>,
   "description": "<string summary>",
-  "type": "expense" | "income" | "transfer",
-  "direction": "in" | "out",
-  "accountName": "<matched or mentioned account name or empty>",
+  "accountName": "<matched or mentioned account name>",
   "accountId": "<matched account ID from list above if found>",
+  "toAccountName": "<destination account name for transfer>",
+  "toAccountId": "<destination account ID for transfer>",
   "personName": "<person name if mentioned>",
   "personId": "<matched person ID from list above if found>",
+  "loanName": "<loan name if mentioned>",
+  "loanId": "<matched loan ID if found>",
+  "principalAmount": <number for EMI principal portion>,
+  "interestAmount": <number for EMI interest portion>,
+  "assetSymbol": "<stock/fund symbol if investment>",
   "date": "${todayDate}",
   "notes": "<optional additional context>"
 }
 [/ACTION]
 
-Classification Guide for actionType:
-- "payable": user borrowed money or owes someone (e.g. "borrowed 5000 from Rahul", "need to pay 2000 to Priya").
-- "receivable": someone borrowed from user or owes user (e.g. "lent 2000 to Amit", "Rahul owes me 1500").
-- "transaction": normal expense, income, or transfer (e.g. "bought groceries for 800", "salary of 50000 in Kotak").
-  - type: "expense" (direction: "out")
-  - type: "income" (direction: "in")
-  - type: "transfer" (direction: "out" from source)
+Classification Guide:
+- "expense": user spent money (e.g. "paid 500 for groceries", "swiped card for 1200")
+- "income": user received money (e.g. "salary 50000 credited", "freelance income 10000")
+- "transfer": user moved money between own accounts (e.g. "transferred 5000 from HDFC to Kotak")
+- "lending": user gave loan / lent money to someone (e.g. "lent 2000 to Amit")
+- "borrowing": user took loan / borrowed money from someone (e.g. "borrowed 5000 from Rahul")
+- "receivable_repayment": someone repaid money to user (e.g. "Amit repaid 2000")
+- "payable_repayment": user paid back debt to someone (e.g. "repaid 5000 to Rahul")
+- "loan_emi": user paid EMI for bank loan (e.g. "paid 15000 car loan EMI")
+- "investment_buy": user bought stock/mutual fund (e.g. "bought 10 shares of RELIANCE for 25000")
+- "investment_sell": user sold stock/mutual fund (e.g. "sold 5 shares of TCS for 18000")
+- "investment_dividend": dividend payout received (e.g. "received 500 dividend from INFY")
+- "reversal": corrective reversal of an erroneous entry
 
 STRICT SCOPE AND BEHAVIOR RULES:
 1. You MUST REFUSE any question that is not related to personal finance or the user's NisFlow financial data. If the user asks about coding, creative writing, science, general trivia, entertainment, weather, or anything unrelated to personal finance, respond ONLY with:

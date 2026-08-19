@@ -1,62 +1,78 @@
 'use client';
 
 import { useState } from 'react';
-import { usePeople } from '@/lib/hooks/use-people';
+import { usePeople, usePeopleLedgerSummary } from '@/lib/hooks/use-people';
 import { PersonCard } from '@/components/people/person-card';
 import { PersonForm } from '@/components/people/person-form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
-import { Skeleton } from '@/components/ui/skeleton';
 import { formatINR } from '@/lib/finance/money';
 import Decimal from 'decimal.js';
 import { Users, Search, UserPlus } from 'lucide-react';
 
 export default function PeoplePage() {
-  const { data: people, isLoading } = usePeople();
+  const { data: people, isLoading: isPeopleLoading } = usePeople();
+  const { data: ledgerSummary, isLoading: isSummaryLoading } = usePeopleLedgerSummary();
   const [search, setSearch] = useState('');
 
-  const filteredPeople = people?.filter(p =>
+  const isLoading = isPeopleLoading || isSummaryLoading;
+
+  const filteredPeople = people?.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   ) || [];
 
-  const totals = (people || []).reduce(
-    (acc, person) => {
-      acc.receivable = acc.receivable.plus(person.amount_owed_by || 0);
-      acc.payable = acc.payable.plus(person.amount_owed_to || 0);
-      return acc;
-    },
-    { receivable: new Decimal(0), payable: new Decimal(0) }
-  );
-
-  const netPosition = totals.receivable.minus(totals.payable);
+  // Derive summary authoritative totals strictly from double-entry ledger lines
+  const totalReceivable = new Decimal(ledgerSummary?.totalReceivable || 0);
+  const totalPayable = new Decimal(ledgerSummary?.totalPayable || 0);
+  const netPosition = new Decimal(ledgerSummary?.netPosition || 0);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="People & Counterparties"
-        description="Track money owed to you and by you across all contacts."
+        description="Authoritative double-entry personal account ledger for money owed and borrowed."
         actions={
-          <PersonForm trigger={
-            <Button><UserPlus className="mr-2 h-4 w-4" /> Add Person</Button>
-          } />
+          <PersonForm
+            trigger={
+              <Button>
+                <UserPlus className="mr-2 h-4 w-4" /> Add Person
+              </Button>
+            }
+          />
         }
       />
 
-      {/* Summary cards */}
+      {/* Authoritative Ledger Summary Cards */}
       {!isLoading && (people?.length ?? 0) > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-            <div className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">Total Receivable</div>
-            <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{formatINR(totals.receivable.toNumber())}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
+              Total Receivable (Owed to You)
+            </div>
+            <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+              {formatINR(totalReceivable.toNumber())}
+            </div>
           </div>
           <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
-            <div className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">Total Payable</div>
-            <div className="text-2xl font-bold text-red-700 dark:text-red-300">{formatINR(totals.payable.toNumber())}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
+              Total Payable (You Owe)
+            </div>
+            <div className="text-2xl font-bold text-red-700 dark:text-red-300">
+              {formatINR(totalPayable.toNumber())}
+            </div>
           </div>
           <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl">
-            <div className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Net Position</div>
-            <div className={`text-2xl font-bold ${netPosition.gte(0) ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
+            <div className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">
+              Net People Position
+            </div>
+            <div
+              className={`text-2xl font-bold ${
+                netPosition.gte(0)
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : 'text-red-700 dark:text-red-300'
+              }`}
+            >
               {formatINR(netPosition.toNumber())}
             </div>
           </div>
@@ -78,7 +94,7 @@ export default function PeoplePage() {
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => (
+          {[1, 2, 3].map((i) => (
             <div key={i} className="h-36 bg-muted animate-pulse rounded-xl" />
           ))}
         </div>
@@ -93,20 +109,27 @@ export default function PeoplePage() {
           </div>
           <h3 className="mt-4 text-lg font-semibold">No counterparties yet</h3>
           <p className="mt-2 mb-4 text-sm text-muted-foreground max-w-sm mx-auto">
-            Add people you owe money to or who owe you money. Track receivables, payables and bill splits.
+            Add people you lend to or borrow from. Track authoritative balances and ledger history.
           </p>
-          <PersonForm trigger={
-            <Button><UserPlus className="mr-2 h-4 w-4" /> Add First Person</Button>
-          } />
+          <PersonForm
+            trigger={
+              <Button>
+                <UserPlus className="mr-2 h-4 w-4" /> Add First Person
+              </Button>
+            }
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredPeople.map(person => (
-            <PersonCard key={person.id} person={person} />
+          {filteredPeople.map((person) => (
+            <PersonCard
+              key={person.id}
+              person={person}
+              ledgerBalance={ledgerSummary?.balances[person.id]}
+            />
           ))}
         </div>
       )}
     </div>
   );
 }
-
