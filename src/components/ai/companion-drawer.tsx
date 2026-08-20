@@ -624,17 +624,33 @@ export function CompanionDrawer() {
                               actionErrors[m.id].toLowerCase().includes('information') ||
                               actionErrors[m.id].toLowerCase().includes('required') ||
                               actionErrors[m.id].toLowerCase().includes('specify') ||
-                              actionErrors[m.id].toLowerCase().includes('inactive')
+                              actionErrors[m.id].toLowerCase().includes('inactive') ||
+                              actionErrors[m.id].toLowerCase().includes('already exists')
                                 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                : actionErrors[m.id].toLowerCase().includes('security') ||
+                                  actionErrors[m.id].toLowerCase().includes('unauthorized') ||
+                                  actionErrors[m.id].toLowerCase().includes('violation')
+                                ? 'bg-destructive/15 text-destructive border-destructive/30'
                                 : 'bg-destructive/10 text-destructive border-destructive/20'
                             )}
                           >
                             <p className="font-semibold">
-                              {actionErrors[m.id].toLowerCase().includes('information') ||
-                              actionErrors[m.id].toLowerCase().includes('required') ||
-                              actionErrors[m.id].toLowerCase().includes('specify') ||
-                              actionErrors[m.id].toLowerCase().includes('inactive')
+                              {actionErrors[m.id].toLowerCase().includes('security') ||
+                              actionErrors[m.id].toLowerCase().includes('unauthorized') ||
+                              actionErrors[m.id].toLowerCase().includes('violation')
+                                ? (action?.actionType === 'create_account'
+                                    ? '🛡️ Account creation blocked for security reasons'
+                                    : '🛡️ Action blocked for security reasons')
+                                : actionErrors[m.id].toLowerCase().includes('information') ||
+                                  actionErrors[m.id].toLowerCase().includes('required') ||
+                                  actionErrors[m.id].toLowerCase().includes('specify') ||
+                                  actionErrors[m.id].toLowerCase().includes('inactive') ||
+                                  actionErrors[m.id].toLowerCase().includes('already exists')
                                 ? 'ℹ️ Action needs information'
+                                : isNonFinancial
+                                ? (action?.actionType === 'create_account'
+                                    ? '⚠️ Account was not created'
+                                    : '⚠️ Action was not created')
                                 : '⚠️ Entry was NOT recorded'}
                             </p>
                             <p className="text-[11px] opacity-90">{actionErrors[m.id]}</p>
@@ -654,7 +670,7 @@ export function CompanionDrawer() {
                               {isExecuting ? (
                                 <>
                                   <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                                  Posting to Ledger…
+                                  {isNonFinancial ? 'Creating…' : 'Posting to Ledger…'}
                                 </>
                               ) : isDestructive ? (
                                 <>
@@ -686,7 +702,13 @@ export function CompanionDrawer() {
                         ) : actionStatus === 'success' ? (
                           <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium pt-1 border-t border-border">
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            Confirmed and recorded into authoritative double-entry ledger!
+                            {action?.actionType === 'create_account'
+                              ? (action.openingBalance || (Number(action.amount) > 0 && action.amount)
+                                  ? 'Account created and opening balance recorded in ledger.'
+                                  : 'Account created successfully.')
+                              : action?.actionType === 'create_person'
+                              ? 'Person created successfully.'
+                              : 'Confirmed and recorded into authoritative double-entry ledger!'}
                           </div>
                         ) : (
                           <div className="text-xs text-muted-foreground italic pt-1 border-t border-border">

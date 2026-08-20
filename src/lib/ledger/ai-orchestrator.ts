@@ -176,14 +176,12 @@ export async function orchestrateAIAction(
           };
         }
 
-        // Insert new account record
+        // Insert new account record using ONLY real existing PostgreSQL columns
         const { data: newAccount, error: accErr } = await (supabase.from('accounts') as any)
           .insert({
             user_id: userId,
             name: rawName.trim(),
-            account_type: supportedType.dbType,
             type: supportedType.dbType,
-            opening_balance: 0,
             current_balance: 0,
             balance: 0,
             is_active: true,
@@ -195,7 +193,7 @@ export async function orchestrateAIAction(
           return {
             success: false,
             actionType: action.actionType,
-            message: 'Failed to create account',
+            message: 'Account was not created',
             errorCode: 'PROJECTION_FAILURE',
             error: accErr?.message || 'Database account insert failed',
             verified: false,

@@ -45,9 +45,11 @@ export interface LegacyDataset {
     id: string;
     user_id: string;
     name: string;
-    account_type: string;
-    opening_balance: number;
-    current_balance: number;
+    type?: string;
+    account_type?: string;
+    opening_balance?: number;
+    current_balance?: number;
+    balance?: number;
   }>;
   transactions: Array<{
     id: string;
@@ -156,7 +158,8 @@ export function planLegacyMigration(
     const openingBal = new Decimal(acc.opening_balance || 0);
     const currBal = new Decimal(acc.current_balance || 0);
 
-    const isLiability = acc.account_type.toLowerCase() === 'credit_card' || acc.account_type.toLowerCase() === 'loan';
+    const accType = (acc.type || acc.account_type || '').toLowerCase();
+    const isLiability = accType === 'credit_card' || accType === 'credit' || accType === 'loan';
     if (isLiability) {
       legacyLiabilities = legacyLiabilities.plus(currBal);
     } else {
