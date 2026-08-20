@@ -2,9 +2,20 @@ import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { sanitizeImportText } from '@/lib/reconciliation/import-sanitizer';
 
 export function exportToCSV(data: any[], filename: string) {
-  const csv = Papa.unparse(data);
+  // Defensive hardening: Sanitize data against CSV formula injection (=, +, -, @)
+  const sanitizedData = data.map((row) => {
+    if (typeof row !== 'object' || row === null) return row;
+    const cleanRow: Record<string, any> = {};
+    for (const [k, v] of Object.entries(row)) {
+      cleanRow[k] = sanitizeImportText(v);
+    }
+    return cleanRow;
+  });
+
+  const csv = Papa.unparse(sanitizedData);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   if (link.download !== undefined) {

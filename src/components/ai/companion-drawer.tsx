@@ -227,11 +227,18 @@ export function CompanionDrawer() {
 
       if (!response.ok) {
         let errorMsg = 'Failed to get response from AI';
-        try {
-          const errData = await response.json();
-          errorMsg = errData.error || errorMsg;
-        } catch {
-          // Keep default
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After');
+          errorMsg = `Rate limit exceeded. Please wait ${retryAfter ? `${retryAfter}s` : 'a moment'} before asking again.`;
+        } else if (response.status === 503) {
+          errorMsg = 'NisFlow AI service is temporarily unavailable. Please try again shortly.';
+        } else {
+          try {
+            const errData = await response.json();
+            errorMsg = errData.error || errorMsg;
+          } catch {
+            // Keep default
+          }
         }
         throw new Error(errorMsg);
       }
@@ -257,14 +264,23 @@ export function CompanionDrawer() {
           )
         );
       }
+
+      // Safeguard: Ensure stream produced meaningful content
+      if (!fullContent || fullContent.trim().length === 0) {
+        throw new Error('NisFlow AI was unable to generate a response. Please try again.');
+      }
     } catch (err: any) {
       console.error('Chat error:', err);
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMessageId
-            ? { ...msg, content: err.message || 'AI service encountered an error. Please try again.', isError: true }
-            : msg
-        )
+        prev.map((msg) => {
+          if (msg.id !== assistantMessageId) return msg;
+          // Preserve partial stream content if any was received before interruption
+          const partialContent = msg.content?.trim();
+          const fallback = partialContent
+            ? `${partialContent}\n\n*[Connection interrupted: ${err.message || 'Stream ended unexpectedly. You can retry your request.'}]*`
+            : (err.message || 'AI service encountered an error. Please try again.');
+          return { ...msg, content: fallback, isError: !partialContent };
+        })
       );
     } finally {
       setIsLoading(false);

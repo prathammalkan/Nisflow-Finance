@@ -38,6 +38,53 @@ export function useInvestment(id: string) {
   });
 }
 
+export function useCreateInvestment() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      name: string;
+      ticker?: string;
+      type: string;
+      platform?: string;
+      units?: number;
+      avg_purchase_price?: number;
+      current_value: number;
+    }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { data, error } = await (supabase.from('investments') as any)
+        .insert({
+          user_id: userData.user.id,
+          name: payload.name,
+          ticker_symbol: payload.ticker,
+          asset_class: payload.type,
+          platform: payload.platform,
+          units: payload.units || null,
+          quantity: payload.units || null,
+          average_purchase_price: payload.avg_purchase_price || null,
+          invested_amount: payload.units && payload.avg_purchase_price ? new Decimal(payload.units).times(payload.avg_purchase_price).toNumber() : payload.current_value,
+          total_invested: payload.units && payload.avg_purchase_price ? new Decimal(payload.units).times(payload.avg_purchase_price).toNumber() : payload.current_value,
+          current_value: payload.current_value,
+          status: 'active',
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['investments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['net-worth-history'] });
+      queryClient.invalidateQueries({ queryKey: ['report-investment'] });
+    },
+  });
+}
+
 export interface CreateInvestmentTxParams {
   investment_id: string;
   type: 'buy' | 'sell' | 'dividend' | 'split' | 'bonus';

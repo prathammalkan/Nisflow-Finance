@@ -358,7 +358,7 @@ STRICT SCOPE RULES:
     }
 
     const googleProvider = createGoogle({ apiKey });
-    const selectedModel = 'gemini-3.5-flash-lite';
+    const selectedModel = 'gemini-2.5-flash';
 
     console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
 

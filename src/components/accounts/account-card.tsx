@@ -55,12 +55,12 @@ export function AccountCard({ account, className }: AccountCardProps) {
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-primary/10 text-primary"
               >
-                {getIcon(acct.account_type || acct.type || '')}
+                {getIcon(acct.type || '')}
               </div>
               <div>
                 <h3 className="font-semibold">{account.name}</h3>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span>{acct.account_type || acct.type}</span>
+                  <span>{acct.type}</span>
                   {(acct.institution || acct.purpose) && (
                     <>
                       <span>•</span>

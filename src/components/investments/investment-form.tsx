@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { useCreateInvestment } from "@/lib/hooks/use-investments";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -32,8 +32,7 @@ const investmentSchema = z.object({
 type InvestmentFormValues = z.infer<typeof investmentSchema>;
 
 export function InvestmentForm({ onSuccess }: { onSuccess?: () => void }) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const supabase = createClient();
+  const createInvestment = useCreateInvestment();
 
   const form = useForm<InvestmentFormValues>({
     resolver: zodResolver(investmentSchema),
@@ -47,32 +46,22 @@ export function InvestmentForm({ onSuccess }: { onSuccess?: () => void }) {
   });
 
   async function onSubmit(data: InvestmentFormValues) {
-    setIsSubmitting(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
-      const { error } = await (supabase.from("investments") as any).insert({
-        user_id: userData.user.id,
+      await createInvestment.mutateAsync({
         name: data.name,
-        ticker_symbol: data.ticker,
-        asset_class: data.type,
+        ticker: data.ticker,
+        type: data.type,
         platform: data.platform,
-        units: data.units || null,
-        average_purchase_price: data.avg_purchase_price || null,
+        units: data.units,
+        avg_purchase_price: data.avg_purchase_price,
         current_value: data.current_value,
-        status: "active",
       });
 
-      if (error) throw error;
-      
       toast.success("Investment added successfully");
       form.reset();
       onSuccess?.();
     } catch (error: any) {
       toast.error(error.message || "Failed to add investment");
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -190,8 +179,8 @@ export function InvestmentForm({ onSuccess }: { onSuccess?: () => void }) {
         </div>
 
         <div className="flex justify-end pt-4">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Add Investment"}
+          <Button type="submit" disabled={createInvestment.isPending}>
+            {createInvestment.isPending ? "Saving..." : "Add Investment"}
           </Button>
         </div>
       </form>

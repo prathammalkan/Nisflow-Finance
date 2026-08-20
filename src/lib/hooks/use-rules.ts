@@ -11,13 +11,13 @@ export function useRules() {
       if (!user.user) throw new Error("Not authenticated");
 
       const { data, error } = await supabase
-        .from("classification_rules")
+        .from("automation_rules")
         .select("*")
         .eq("user_id", user.user.id)
         .order("priority", { ascending: false });
 
       if (error) throw error;
-      return data as any[];
+      return (data || []) as any[];
     }
   });
 }
@@ -32,7 +32,7 @@ export function useCreateRule() {
       if (!user.user) throw new Error("Not authenticated");
 
       const { data, error } = await supabase
-        .from("classification_rules")
+        .from("automation_rules")
         .insert([{ ...rule, user_id: user.user.id }] as any)
         .select()
         .single();
@@ -62,7 +62,7 @@ export function useUpdateRule() {
       const { user_id, ...safeUpdates } = updates;
 
       const { data, error } = await (supabase
-        .from("classification_rules") as any)
+        .from("automation_rules") as any)
         .update(safeUpdates)
         .eq("id", id)
         .eq("user_id", user.user.id)
@@ -92,7 +92,7 @@ export function useDeleteRule() {
       if (!user.user) throw new Error("Not authenticated");
 
       const { error } = await supabase
-        .from("classification_rules")
+        .from("automation_rules")
         .delete()
         .eq("id", id)
         .eq("user_id", user.user.id);

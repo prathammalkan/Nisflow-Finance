@@ -736,9 +736,10 @@ export interface Database {
           id: string
           user_id: string
           name: string
-          trigger: Json
-          action: Json
+          conditions: Json
+          actions: Json
           is_active: boolean
+          priority: number
           created_at: string
           updated_at: string
         }
@@ -746,9 +747,10 @@ export interface Database {
           id?: string
           user_id: string
           name: string
-          trigger: Json
-          action: Json
+          conditions: Json
+          actions: Json
           is_active?: boolean
+          priority?: number
           created_at?: string
           updated_at?: string
         }
@@ -756,9 +758,10 @@ export interface Database {
           id?: string
           user_id?: string
           name?: string
-          trigger?: Json
-          action?: Json
+          conditions?: Json
+          actions?: Json
           is_active?: boolean
+          priority?: number
           created_at?: string
           updated_at?: string
         }
