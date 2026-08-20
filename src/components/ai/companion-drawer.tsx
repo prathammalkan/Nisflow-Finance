@@ -22,6 +22,9 @@ import {
   RotateCcw,
   Landmark,
   TrendingUp,
+  ShieldCheck,
+  ArrowRightLeft,
+  PlusCircle,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
@@ -31,6 +34,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatINR } from '@/lib/finance/money';
 import { toast } from 'sonner';
 import { executeAIFinancialAction, AIFinancialActionPayload, AIActionType } from '@/lib/ledger/ai';
+import { executeAIActionServer } from '@/app/actions/ledger-ai';
+import { generateAccountingPreview } from '@/lib/ai/accounting-preview';
 
 interface ChatMessage {
   id: string;
@@ -44,6 +49,8 @@ const SUGGESTIONS = [
   'I borrowed ₹5,000 from Rahul',
   'Lent ₹2,000 to Amit',
   'Paid EMI ₹15,000 for Car Loan from HDFC',
+  'Create my Zerodha Demat account',
+  'Create my BOB bank account',
 ];
 
 function normalizeActionPayload(raw: any): AIFinancialActionPayload | null {
@@ -70,13 +77,19 @@ function normalizeActionPayload(raw: any): AIFinancialActionPayload | null {
     notes: raw.notes,
     accountId: raw.accountId,
     accountName: raw.accountName,
+    accountType: raw.accountType,
     toAccountId: raw.toAccountId,
     toAccountName: raw.toAccountName,
+    openingBalance: raw.openingBalance,
     personId: raw.personId,
     personName: raw.personName,
+    phone: raw.phone,
+    email: raw.email,
+    relationship: raw.relationship,
     repaymentId: raw.repaymentId,
     loanId: raw.loanId,
     loanName: raw.loanName,
+    loanType: raw.loanType,
     principalAmount: raw.principalAmount,
     interestAmount: raw.interestAmount,
     assetSymbol: raw.assetSymbol,
@@ -87,6 +100,8 @@ function normalizeActionPayload(raw: any): AIFinancialActionPayload | null {
     holdingAccountName: raw.holdingAccountName,
     costBasis: raw.costBasis,
     realizedGainLoss: raw.realizedGainLoss,
+    categoryName: raw.categoryName,
+    categoryId: raw.categoryId,
     originalJournalEntryId: raw.originalJournalEntryId,
     reversalReason: raw.reversalReason,
   };
@@ -120,9 +135,9 @@ export function CompanionDrawer() {
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [isExecutingAction, setIsExecutingAction] = useState<Record<string, boolean>>({});
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const supabase = createClient();
   const queryClient = useQueryClient();
 
   const scrollToBottom = useCallback(() => {
@@ -130,282 +145,174 @@ export function CompanionDrawer() {
   }, []);
 
   useEffect(() => {
-    if (open) {
-      scrollToBottom();
-    }
-  }, [messages, open, scrollToBottom]);
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
-  // Clean up speech recognition & active fetches on unmount
+  // Handle Speech Recognition for voice input
   useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (_) {}
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-IN';
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+          setIsListening(false);
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
       }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
+    }
   }, []);
 
   const toggleListening = () => {
+    if (!recognitionRef.current) {
+      toast.error('Speech recognition is not supported in this browser.');
+      return;
+    }
+
     if (isListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (_) {}
-      }
+      recognitionRef.current.stop();
       setIsListening(false);
-      return;
-    }
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      toast.error('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-IN';
-
-      recognition.onstart = () => {
+    } else {
+      try {
+        recognitionRef.current.start();
         setIsListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        if (transcript) {
-          setInput(transcript);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
+      } catch {
         setIsListening(false);
-        if (event.error === 'not-allowed') {
-          toast.error('Microphone permission was denied. Please allow microphone access in your browser.');
-        } else if (event.error !== 'no-speech') {
-          toast.error('Voice recognition error. Please try typing instead.');
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.error('Failed to initialize speech recognition', err);
-      setIsListening(false);
-      toast.error('Could not start microphone.');
+      }
     }
   };
 
   const sendMessage = async (textToSend: string) => {
-    const trimmed = textToSend.trim();
-    if (!trimmed || isLoading) return;
-
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (_) {}
-      setIsListening(false);
-    }
-
-    setInput('');
+    if (!textToSend.trim() || isLoading) return;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: trimmed,
+      content: textToSend.trim(),
     };
 
-    const assistantMessageId = `assistant-${Date.now()}`;
-    const newMessages = [...messages.filter((m) => !m.isError), userMessage];
-
-    setMessages([
-      ...newMessages,
-      { id: assistantMessageId, role: 'assistant', content: '' },
-    ]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput('');
     setIsLoading(true);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    const timeoutId = setTimeout(() => {
-      controller.abort('timeout');
-    }, 35000);
-
-    let requestId = 'unknown';
+    const assistantMessageId = `asst-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantMessageId, role: 'assistant', content: '' },
+    ]);
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        signal: controller.signal,
         body: JSON.stringify({
-          messages: newMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
 
-      clearTimeout(timeoutId);
-      requestId = response.headers.get('X-Request-Id') || 'unknown';
-
       if (!response.ok) {
-        let errorMessage = 'NisFlow AI is temporarily unavailable. Try again.';
-        if (response.status === 401) {
-          errorMessage = 'Session expired. Please sign in again.';
-          toast.error('Authentication session expired');
-        } else if (response.status === 403) {
-          errorMessage = `AI provider access was denied. (Ref: ${requestId})`;
-        } else if (response.status === 404) {
-          errorMessage = `The configured AI model is unavailable. (Ref: ${requestId})`;
-        } else if (response.status === 429) {
-          errorMessage = 'AI is temporarily rate-limited. Please wait a moment and try again.';
-        } else if (response.status === 503) {
-          errorMessage = `AI service is temporarily experiencing high traffic. Please try again shortly. (Ref: ${requestId})`;
-        } else if (response.status === 504) {
-          errorMessage = `AI response timed out. Please try again. (Ref: ${requestId})`;
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          if (errorData.error) {
-            errorMessage = `${errorData.error}${errorData.requestId ? ` (Ref: ${errorData.requestId})` : ''}`;
-          } else {
-            errorMessage = `NisFlow AI encountered an error. (Ref: ${requestId})`;
-          }
+        let errorMsg = 'Failed to get response from AI';
+        try {
+          const errData = await response.json();
+          errorMsg = errData.error || errorMsg;
+        } catch {
+          // Keep default
         }
-        throw new Error(errorMessage);
+        throw new Error(errorMsg);
       }
 
       if (!response.body) {
-        throw new Error(`No response received from server. (Ref: ${requestId})`);
+        throw new Error('No response body received from server.');
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let accumulatedContent = '';
+      let fullContent = '';
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          accumulatedContent += chunk;
+        const chunk = decoder.decode(value, { stream: true });
+        fullContent += chunk;
 
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: accumulatedContent }
-                : msg
-            )
-          );
-        }
-      } catch (readErr: any) {
-        if (accumulatedContent.trim().length > 0) {
-          // If partial content was received before stream disconnect, preserve it and mark interruption
-          const interruptedContent = `${accumulatedContent}\n\n*(Connection interrupted — tap Retry below to regenerate)*`;
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: interruptedContent, isError: true }
-                : msg
-            )
-          );
-          return;
-        }
-        throw readErr;
-      }
-
-      if (!accumulatedContent.trim()) {
-        throw new Error(`AI was unable to generate a response. Please try again. (Ref: ${requestId})`);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId ? { ...msg, content: fullContent } : msg
+          )
+        );
       }
     } catch (err: any) {
-      clearTimeout(timeoutId);
       console.error('Chat error:', err);
-
-      let userFacingError = `NisFlow AI is temporarily unavailable. Try again. (Ref: ${requestId})`;
-      if (err.name === 'AbortError' || err === 'timeout') {
-        userFacingError = `The request took too long. Check your connection and try again. (Ref: ${requestId})`;
-      } else if (err.message && (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch'))) {
-        userFacingError = `NisFlow AI couldn't connect. Check your internet connection and try again. (Ref: ${requestId})`;
-      } else if (err.message) {
-        userFacingError = err.message;
-      }
-
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? {
-                ...msg,
-                content: userFacingError,
-                isError: true,
-              }
+            ? { ...msg, content: err.message || 'AI service encountered an error. Please try again.', isError: true }
             : msg
         )
       );
-      toast.error(userFacingError);
     } finally {
       setIsLoading(false);
-      abortControllerRef.current = null;
     }
   };
 
-  const handleExecuteAction = async (msgId: string, action: AIFinancialActionPayload) => {
-    setIsExecutingAction((prev) => ({ ...prev, [msgId]: true }));
-    setActionErrors((prev) => ({ ...prev, [msgId]: '' }));
-    const supabase = createClient();
+  const handleExecuteAction = async (messageId: string, action: AIFinancialActionPayload) => {
+    setIsExecutingAction((prev) => ({ ...prev, [messageId]: true }));
+    setActionErrors((prev) => ({ ...prev, [messageId]: '' }));
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User is not authenticated. Please sign in again.');
-
-      const result = await executeAIFinancialAction(supabase as any, user.id, msgId, action);
+      const result = await executeAIActionServer(messageId, action);
 
       if (!result.success) {
-        throw new Error(result.error || result.message || 'Failed to execute financial action');
+        setActionErrors((prev) => ({
+          ...prev,
+          [messageId]: result.error || 'Failed to record entry in double-entry ledger.',
+        }));
+        toast.error(result.error || 'Execution failed');
+        return;
       }
 
-      // Invalidate all related caches
+      setActionStatuses((prev) => ({ ...prev, [messageId]: 'success' }));
+      toast.success(result.message || 'Action executed and verified!');
+
+      // Invalidate relevant React Query caches
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['people'] });
-      queryClient.invalidateQueries({ queryKey: ['people_ledger_summary'] });
-      queryClient.invalidateQueries({ queryKey: ['receivables'] });
-      queryClient.invalidateQueries({ queryKey: ['receivables-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['payables'] });
-      queryClient.invalidateQueries({ queryKey: ['payables-summary'] });
       queryClient.invalidateQueries({ queryKey: ['loans'] });
       queryClient.invalidateQueries({ queryKey: ['investments'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-
-      toast.success(result.message);
-      setActionStatuses((prev) => ({ ...prev, [msgId]: 'success' }));
+      queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
     } catch (err: any) {
-      console.error('Failed to execute action:', err);
-      const errMsg = err.message || 'Failed to record entry';
-      setActionErrors((prev) => ({ ...prev, [msgId]: errMsg }));
-      toast.error(errMsg);
+      console.error('Action execution error:', err);
+      setActionErrors((prev) => ({
+        ...prev,
+        [messageId]: err.message || 'An unexpected error occurred.',
+      }));
+      toast.error(err.message || 'Failed to execute action');
     } finally {
-      setIsExecutingAction((prev) => ({ ...prev, [msgId]: false }));
+      setIsExecutingAction((prev) => ({ ...prev, [messageId]: false }));
     }
   };
 
-  const handleDismissAction = (msgId: string) => {
-    setActionStatuses((prev) => ({ ...prev, [msgId]: 'dismissed' }));
+  const handleDismissAction = (messageId: string) => {
+    setActionStatuses((prev) => ({ ...prev, [messageId]: 'dismissed' }));
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -424,6 +331,10 @@ export function CompanionDrawer() {
 
   const renderBadge = (action: AIFinancialActionPayload) => {
     switch (action.actionType) {
+      case 'create_account':
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-blue-600 bg-blue-50 dark:bg-blue-950"><PlusCircle className="mr-1 h-3 w-3" /> New Account</Badge>;
+      case 'create_person':
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-cyan-600 bg-cyan-50 dark:bg-cyan-950"><Users className="mr-1 h-3 w-3" /> Add Person</Badge>;
       case 'lending':
         return <Badge className="text-[10px] uppercase font-semibold bg-emerald-600">Lent Money (Receivable)</Badge>;
       case 'borrowing':
@@ -438,12 +349,13 @@ export function CompanionDrawer() {
       case 'investment_dividend':
         return <Badge className="text-[10px] uppercase font-semibold bg-emerald-600">Income Entry</Badge>;
       case 'transfer':
-        return <Badge variant="outline" className="text-[10px] uppercase font-semibold text-blue-600">Account Transfer</Badge>;
+        return <Badge variant="outline" className="text-[10px] uppercase font-semibold text-blue-600"><ArrowRightLeft className="mr-1 h-3 w-3" /> Account Transfer</Badge>;
       case 'investment_buy':
-        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600">Investment Buy</Badge>;
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600"><TrendingUp className="mr-1 h-3 w-3" /> Investment Purchase</Badge>;
       case 'investment_sell':
-        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600">Investment Sell</Badge>;
+        return <Badge variant="secondary" className="text-[10px] uppercase font-semibold text-purple-600"><TrendingUp className="mr-1 h-3 w-3" /> Investment Sale</Badge>;
       case 'reversal':
+      case 'delete_loan':
         return <Badge variant="destructive" className="text-[10px] uppercase font-semibold">Reversal / Correction</Badge>;
       default:
         return <Badge variant="outline" className="text-[10px] uppercase font-semibold">Expense Entry</Badge>;
@@ -481,7 +393,7 @@ export function CompanionDrawer() {
                   onClick={handleClearChat}
                   title="Clear conversation"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               )}
               <Button
@@ -495,17 +407,17 @@ export function CompanionDrawer() {
             </div>
           </SheetHeader>
 
-          {/* Messages scrollable area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+          {/* Chat message thread */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-4">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Bot className="h-6 w-6 text-primary" />
+              <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-4 text-muted-foreground">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                  <Bot className="h-6 w-6" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-sm">Finance Assistant & Voice Logger</p>
-                  <p className="text-xs text-muted-foreground max-w-[240px]">
-                    Ask about your finances, or use voice/text to log expenses, income, debts & loan EMIs.
+                  <h3 className="font-semibold text-foreground text-sm">How can I help with your finances today?</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Ask about your balances, create accounts, record transactions, loans, investments, or debts.
                   </p>
                 </div>
                 <div className="w-full space-y-2 max-w-sm">
@@ -548,11 +460,33 @@ export function CompanionDrawer() {
                   );
                 }
 
+                // Generate server-derived accounting preview for financial actions
+                const preview = action && action.actionType !== 'create_account' && action.actionType !== 'create_person'
+                  ? generateAccountingPreview({
+                      actionType: action.actionType,
+                      amount: action.amount || 0,
+                      sourceAccountName: action.accountName,
+                      destAccountName: action.toAccountName || action.holdingAccountName,
+                      personName: action.personName,
+                      loanName: action.loanName,
+                      assetSymbol: action.assetSymbol,
+                      categoryName: action.categoryName,
+                      principalAmount: action.principalAmount,
+                      interestAmount: action.interestAmount,
+                      costBasis: action.costBasis,
+                      realizedGainLoss: action.realizedGainLoss,
+                      description: action.description,
+                    })
+                  : null;
+
+                const isDestructive = action?.actionType === 'reversal' || action?.actionType === 'delete_loan';
+                const isNonFinancial = action?.actionType === 'create_account' || action?.actionType === 'create_person';
+
                 return (
                   <div
                     key={m.id}
                     className={cn(
-                      'flex flex-col gap-1.5 max-w-[92%]',
+                      'flex flex-col gap-1.5 max-w-[94%]',
                       m.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
                     )}
                   >
@@ -593,14 +527,21 @@ export function CompanionDrawer() {
 
                     {/* Proposed Action Card (if action detected) */}
                     {action && (
-                      <div className="w-full mt-1 rounded-xl border border-border bg-card text-card-foreground p-3 shadow-sm space-y-3">
+                      <div className={cn(
+                        "w-full mt-1 rounded-xl border p-3 shadow-sm space-y-3",
+                        isDestructive
+                          ? "border-destructive/30 bg-destructive/5 text-card-foreground"
+                          : "border-border bg-card text-card-foreground"
+                      )}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             {renderBadge(action)}
                           </div>
-                          <span className="text-xs font-bold text-foreground">
-                            {formatINR(Number(action.amount))}
-                          </span>
+                          {Number(action.amount) > 0 && (
+                            <span className="text-xs font-bold text-foreground">
+                              {formatINR(Number(action.amount))}
+                            </span>
+                          )}
                         </div>
 
                         <div className="space-y-1 text-xs text-muted-foreground">
@@ -645,6 +586,36 @@ export function CompanionDrawer() {
                           )}
                         </div>
 
+                        {/* Server-Generated Accounting Preview */}
+                        {preview && (
+                          <div className="p-2 rounded-lg bg-muted/60 border border-border/60 text-[11px] space-y-1.5 font-mono">
+                            <div className="flex items-center justify-between text-muted-foreground font-sans font-medium text-[10px] uppercase">
+                              <span>Accounting Preview</span>
+                              <span className={cn(
+                                "font-semibold",
+                                preview.netWorthEffect.direction === 'POSITIVE' ? 'text-emerald-600 dark:text-emerald-400' :
+                                preview.netWorthEffect.direction === 'NEGATIVE' ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground'
+                              )}>
+                                {preview.netWorthEffect.direction === 'POSITIVE' ? `+₹${preview.netWorthEffect.amount}` :
+                                 preview.netWorthEffect.direction === 'NEGATIVE' ? `-₹${preview.netWorthEffect.amount}` : 'Net Worth Neutral'}
+                              </span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {preview.lines.map((line, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-foreground">
+                                  <span className="truncate pr-2">
+                                    <span className={line.type === 'Dr' ? 'text-blue-500 font-bold' : 'text-amber-500 font-bold'}>
+                                      {line.type}
+                                    </span>{' '}
+                                    {line.accountName}
+                                  </span>
+                                  <span className="shrink-0 font-medium">₹{line.amount}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Error or Prerequisite state */}
                         {actionStatus === 'pending' && actionErrors[m.id] && (
                           <div
@@ -675,6 +646,7 @@ export function CompanionDrawer() {
                           <div className="flex items-center gap-2 pt-1 border-t border-border">
                             <Button
                               size="sm"
+                              variant={isDestructive ? "destructive" : "default"}
                               className="flex-1 h-8 text-xs font-medium"
                               disabled={isExecuting}
                               onClick={() => handleExecuteAction(m.id, action)}
@@ -683,6 +655,16 @@ export function CompanionDrawer() {
                                 <>
                                   <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                                   Posting to Ledger…
+                                </>
+                              ) : isDestructive ? (
+                                <>
+                                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                                  Confirm Reversal / Deletion
+                                </>
+                              ) : isNonFinancial ? (
+                                <>
+                                  <PlusCircle className="mr-1.5 h-3.5 w-3.5" />
+                                  Confirm & Create
                                 </>
                               ) : (
                                 <>
@@ -748,49 +730,30 @@ export function CompanionDrawer() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isListening ? "Listening..." : "Type or speak financial actions…"}
-                className="flex-1 h-9 text-sm"
                 disabled={isLoading}
-                autoComplete="off"
+                className="h-9 text-xs flex-1"
               />
-
-              {/* Microphone Toggle Button */}
               <Button
                 type="button"
-                size="icon"
                 variant={isListening ? "destructive" : "outline"}
-                className={cn(
-                  "h-9 w-9 shrink-0 transition-all",
-                  isListening && "ring-2 ring-destructive ring-offset-2 animate-pulse"
-                )}
+                size="icon"
                 onClick={toggleListening}
-                title={isListening ? "Stop listening" : "Voice input (Microphone)"}
-                aria-label={isListening ? "Stop voice input" : "Start voice input"}
                 disabled={isLoading}
+                className="h-9 w-9 shrink-0"
+                title={isListening ? "Stop listening" : "Voice input"}
               >
-                {isListening ? (
-                  <MicOff className="h-4 w-4" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </Button>
-
-              {/* Send Button */}
               <Button
                 type="submit"
                 size="icon"
-                className="h-9 w-9 shrink-0"
                 disabled={isLoading || !input.trim()}
+                className="h-9 w-9 shrink-0 bg-primary text-primary-foreground"
+                aria-label="Send message"
               >
-                {isLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5" />
-                )}
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </form>
-            <p className="text-[10px] text-muted-foreground text-center mt-2">
-              Review & confirm before posting to double-entry ledger
-            </p>
           </div>
         </SheetContent>
       </Sheet>
