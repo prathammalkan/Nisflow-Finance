@@ -1112,6 +1112,26 @@ export interface Database {
           is_reconciled: boolean
         }>
       }
+      preview_user_data_reset: {
+        Args: Record<string, never>
+        Returns: {
+          totalRecords: number
+          breakdown: Record<string, number>
+        }
+      }
+      reset_user_data: {
+        Args: {
+          p_reset_id: string
+          p_confirmation_phrase: string
+        }
+        Returns: {
+          success: boolean
+          resetId: string
+          totalDeleted: number
+          deletedCounts: Record<string, number>
+          verified: boolean
+        }
+      }
     }
   }
 }

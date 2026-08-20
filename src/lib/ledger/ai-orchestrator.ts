@@ -1562,6 +1562,20 @@ export async function orchestrateAIAction(
         };
       }
 
+      // ==========================================
+      // L4: RESET ALL FINANCIAL DATA (BARRIER PROTECTED)
+      // ==========================================
+      case 'reset_financial_data': {
+        return {
+          success: false,
+          actionType: action.actionType,
+          message: 'Reset requires explicit typed confirmation in Settings',
+          errorCode: 'FORBIDDEN',
+          error: 'Resetting all financial data is an L4 High-Risk Destructive operation that cannot be executed directly from chat. Please navigate to Settings → Danger Zone → Reset Financial Data to review your data preview and complete the required typed confirmation.',
+          verified: false,
+        };
+      }
+
       default: {
         return {
           success: false,

@@ -11,7 +11,8 @@ import { exportFullUserBackupJSON, exportFullUserBackupSQL } from '@/lib/export-
 import { useBiometricLock } from '@/lib/hooks/use-biometric-lock';
 import { useWebNotifications } from '@/lib/hooks/use-web-notifications';
 import { useProfile, useUpdateProfile } from '@/lib/hooks/use-profile';
-import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2, Smartphone, Share2, MoreVertical, PlusSquare, Laptop } from 'lucide-react';
+import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2, Smartphone, Share2, MoreVertical, PlusSquare, Laptop, AlertTriangle } from 'lucide-react';
+import { ResetDataModal } from '@/components/settings/reset-data-modal';
 
 export default function SettingsPage() {
   const currentDate = new Date();
@@ -438,6 +439,32 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* 5. Danger Zone (Destructive Factory Reset) */}
+      <section className="bg-destructive/5 text-card-foreground p-6 rounded-xl border border-destructive/30 shadow-sm space-y-4">
+        <div className="flex items-center gap-3 border-b border-destructive/20 pb-4">
+          <div className="rounded-lg bg-destructive/10 p-2.5 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-destructive">Danger Zone</h2>
+            <p className="text-sm text-muted-foreground">Permanent and destructive account management operations.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg border border-destructive/20 bg-background">
+          <div className="space-y-1">
+            <h3 className="font-semibold text-sm text-foreground">Reset All Financial Data</h3>
+            <p className="text-xs text-muted-foreground max-w-xl">
+              Permanently purges all financial accounts, transactions, double-entry ledger journals, loans, investments, documents, and budgets while preserving your login authentication and profile identity.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <ResetDataModal />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
+

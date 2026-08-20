@@ -96,7 +96,9 @@ export type CanonicalActionType =
   // L4 Destructive Mutation
   | 'reversal'
   | 'delete_loan'
-  | 'execute_plan';
+  | 'execute_plan'
+  | 'reset_financial_data';
+
 
 export interface CapabilityDefinition {
   id: string;
@@ -702,7 +704,22 @@ export const CAPABILITY_REGISTRY: Record<CanonicalActionType, CapabilityDefiniti
     optionalParameters: ['title'],
     idempotencyPrefix: 'PLAN:EXEC',
   },
+  reset_financial_data: {
+    id: 'CAP_RESET_FINANCIAL_DATA',
+    actionType: 'reset_financial_data',
+    domain: 'plans',
+    authorityLevel: 'L4_HIGH_RISK_DESTRUCTIVE',
+    financialMutation: false,
+    destructive: true,
+    confirmationRequired: true,
+    riskLevel: 'critical',
+    description: 'Permanently purges all financial data and ledger history across all domains. Strictly requires UI typed confirmation in Settings.',
+    requiredParameters: [],
+    optionalParameters: [],
+    idempotencyPrefix: 'RESET:DATA',
+  },
 };
+
 
 /**
  * Helper to get capability metadata by actionType

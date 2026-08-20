@@ -138,3 +138,11 @@ export async function checkInsightRateLimit(userId: string, req: Request): Promi
   const identifier = `${userId}:${ip}`;
   return limitRequest('insights', identifier, 15, 3600);
 }
+
+// 4. Data Reset Limiter: 5 requests per 10 minutes (600s) per user
+export async function checkResetDataRateLimit(userId: string, req: Request): Promise<RateLimitResult> {
+  const ip = getClientIp(req);
+  const identifier = `${userId}:${ip}`;
+  return limitRequest('reset_data', identifier, 5, 600);
+}
+
