@@ -886,3 +886,35 @@ test('USER DATA RESET [13]: Prompt injection cannot bypass UI confirmation barri
   }
 });
 
+test('USER DATA RESET [14]: Schema Definition Invariant — audit_logs table explicitly specifies details JSONB column', () => {
+  const mig012 = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/012_security_and_schema_alignment.sql'),
+    'utf-8'
+  );
+  const mig013 = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/013_reset_idempotency.sql'),
+    'utf-8'
+  );
+
+  // 1. Migration 012 must execute ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS details JSONB;
+  assert.match(
+    mig012,
+    /ALTER\s+TABLE\s+public\.audit_logs\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+details\s+JSONB/i,
+    'Migration 012 must contain ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS details JSONB'
+  );
+
+  // 2. Migration 013 reset_user_data must insert into details and check details for idempotency
+  assert.match(
+    mig013,
+    /details->>'reset_id'\s*=\s*p_reset_id/,
+    'Migration 013 must query details JSONB for idempotency verification'
+  );
+  assert.match(
+    mig013,
+    /INSERT\s+INTO\s+public\.audit_logs[\s\S]*?details/,
+    'Migration 013 must insert completion metadata into details JSONB column'
+  );
+});
+
+
+
