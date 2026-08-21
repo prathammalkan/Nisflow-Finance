@@ -30,6 +30,7 @@ import {
   ChevronRight,
   LogOut,
   Calculator,
+  Landmark,
 } from "lucide-react";
 
 const navigation = [
@@ -42,6 +43,7 @@ const navigation = [
     items: [
       { name: "Transactions", href: "/transactions", icon: ArrowRightLeft },
       { name: "Accounts", href: "/accounts", icon: Wallet },
+      { name: "Loans", href: "/loans", icon: Landmark },
       { name: "Spending", href: "/spending", icon: CreditCard },
       { name: "Recurring", href: "/recurring", icon: CalendarClock },
     ],

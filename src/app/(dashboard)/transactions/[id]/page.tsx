@@ -1,7 +1,9 @@
 "use client";
 
+import * as React from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useTransaction } from "@/lib/hooks/use-transactions";
+import { useTransaction, useDeleteTransaction } from "@/lib/hooks/use-transactions";
 import { formatINR } from "@/lib/finance/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -10,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Edit, Trash2, Link as LinkIcon, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Decimal from "decimal.js";
-import { useDeleteTransaction } from "@/lib/hooks/use-transactions";
+import { TransactionForm } from "@/components/transactions/transaction-form";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function TransactionDetailPage() {
   const params = useParams();
@@ -21,19 +24,21 @@ export default function TransactionDetailPage() {
   const transaction = data as any;
   const deleteTransaction = useDeleteTransaction();
 
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
   if (isLoading) {
-    return <div className="p-8">Loading transaction details...</div>;
+    return <div className="p-8 text-muted-foreground">Loading transaction details...</div>;
   }
 
   if (!transaction) {
-    return <div className="p-8">Transaction not found</div>;
+    return <div className="p-8 text-destructive">Transaction not found</div>;
   }
 
   const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      await deleteTransaction.mutateAsync(id);
-      router.push('/transactions');
-    }
+    await deleteTransaction.mutateAsync(id);
+    setIsDeleteDialogOpen(false);
+    router.push('/transactions');
   };
 
   const isOut = transaction.direction === 'out';
@@ -42,17 +47,33 @@ export default function TransactionDetailPage() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-semibold flex-1">Transaction Details</h1>
-        <Button variant="outline" className="gap-2">
+        <Button variant="outline" className="gap-2" onClick={() => setIsEditOpen(true)}>
           <Edit className="h-4 w-4" /> Edit
         </Button>
-        <Button variant="destructive" className="gap-2" onClick={handleDelete}>
+        <Button variant="destructive" className="gap-2" onClick={() => setIsDeleteDialogOpen(true)}>
           <Trash2 className="h-4 w-4" /> Delete
         </Button>
       </div>
+
+      <TransactionForm
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        transaction={transaction}
+      />
+
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete Transaction"
+        description="Are you sure you want to delete this transaction? This will reverse any linked accounting journals and adjust account balances."
+        confirmLabel="Delete Transaction"
+        onConfirm={handleDelete}
+        isLoading={deleteTransaction.isPending}
+      />
 
       <div className="bg-card rounded-xl p-8 border shadow-sm flex flex-col items-center text-center space-y-4">
         <div className={cn("text-5xl font-bold tracking-tight", isOut ? "text-red-600" : "text-green-600")}>

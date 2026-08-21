@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div
         className={cn(
           "flex flex-1 flex-col transition-all duration-300",
-          collapsed ? "lg:pl-[72px]" : "lg:pl-[260px]"
+          collapsed ? "md:pl-[72px]" : "md:pl-[260px]"
         )}
       >
         <Header collapsed={collapsed} setIsMobileOpen={setIsMobileOpen} />

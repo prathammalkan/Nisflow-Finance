@@ -177,10 +177,12 @@ export async function getCounterpartyAuthoritativeBalance(
   let totalPayCredits = new Decimal(0);
 
   for (const line of lines || []) {
-    const entryStatus = line.journal_entries?.status || 'posted';
-    if (entryStatus !== 'posted') {
-      continue; // Exclude reversed entries from balance
-    }
+    // NOTE(FIN-01): Do NOT filter by status here. Both the original entry (status='reversed')
+    // and the reversal entry (status='posted') must participate in the balance calculation.
+    // Double-entry arithmetic guarantees they cancel correctly:
+    //   Original lend:   Dr Receivable +1000
+    //   Reversal entry:  Cr Receivable -1000  → net = 0
+    // Filtering out the original while keeping the reversal produces a phantom negative balance.
 
     const d = new Decimal(line.debit_amount || 0);
     const c = new Decimal(line.credit_amount || 0);
@@ -243,8 +245,16 @@ export async function getPeopleAuthoritativeSummary(
   let totalReceivable = new Decimal(0);
   let totalPayable = new Decimal(0);
 
-  for (const cp of counterparties || []) {
-    const bal = await getCounterpartyAuthoritativeBalance(supabase, userId, cp.id);
+  const cpList = (counterparties || []) as Array<{ id: string; name: string }>;
+
+  // PERF-02: Fetch all counterparty balances concurrently rather than in serial loop
+  const fetchedBalances = await Promise.all(
+    cpList.map((cp) => getCounterpartyAuthoritativeBalance(supabase, userId, cp.id))
+  );
+
+  for (let i = 0; i < cpList.length; i++) {
+    const cp = cpList[i];
+    const bal = fetchedBalances[i];
     balances[cp.id] = bal;
     totalReceivable = totalReceivable.plus(bal.receivableBalance);
     totalPayable = totalPayable.plus(bal.payableBalance);
@@ -328,16 +338,14 @@ export async function getPersonLedgerHistory(
       if (d.gt(0)) moneyLent = d;
       if (c.gt(0)) moneyReceived = c;
 
-      if (isPosted) {
-        runningReceivable = runningReceivable.plus(d).minus(c);
-      }
+      // In double-entry, both original (status='reversed') and reversal (status='posted')
+      // must participate in the running balance to cancel out accurately.
+      runningReceivable = runningReceivable.plus(d).minus(c);
     } else if (line.ledger_account_id === payableAccountId) {
       if (c.gt(0)) moneyBorrowed = c;
       if (d.gt(0)) moneyRepaid = d;
 
-      if (isPosted) {
-        runningPayable = runningPayable.plus(c).minus(d);
-      }
+      runningPayable = runningPayable.plus(c).minus(d);
     }
 
     const runningNet = runningReceivable.minus(runningPayable);
@@ -384,6 +392,18 @@ export async function recordLending(
     return { success: false, error: 'Lending amount exceeds INR 2-decimal paise precision.' };
   }
 
+  // NOTE(FIN-04): receivableId drives the idempotency key. Callers SHOULD supply a stable,
+  // pre-generated UUID so that a network-timeout retry uses the same key (and therefore returns
+  // the already-posted entry). When receivableId is omitted, a fresh UUID is generated here,
+  // which means a retry will produce a different key → duplicate posting risk. All call sites
+  // should pass receivableId from their own stable operation identity (e.g., a form-generated UUID
+  // stored in component state before the first submission attempt).
+  if (!input.receivableId) {
+    console.warn(
+      '[people.ts:recordLending] receivableId not provided — generated a new UUID. ' +
+      'Network-timeout retries without receivableId will create duplicate postings.'
+    );
+  }
   const receivableId = input.receivableId || crypto.randomUUID();
   const idempotencyKey = `REC:LEND:${receivableId}`;
   const txnDate = input.date ? input.date.split('T')[0] : new Date().toISOString().split('T')[0];
@@ -457,6 +477,14 @@ export async function recordBorrowing(
     return { success: false, error: 'Borrowing amount exceeds INR 2-decimal paise precision.' };
   }
 
+  // NOTE(FIN-04): payableId drives the idempotency key. Callers SHOULD supply a stable,
+  // pre-generated UUID for retry safety (see recordLending note above).
+  if (!input.payableId) {
+    console.warn(
+      '[people.ts:recordBorrowing] payableId not provided — generated a new UUID. ' +
+      'Network-timeout retries without payableId will create duplicate postings.'
+    );
+  }
   const payableId = input.payableId || crypto.randomUUID();
   const idempotencyKey = `PAY:BORROW:${payableId}`;
   const txnDate = input.date ? input.date.split('T')[0] : new Date().toISOString().split('T')[0];
@@ -533,6 +561,14 @@ export async function recordRepayment(
 
   // 1. Fetch current authoritative balance before processing
   const currentBalances = await getCounterpartyAuthoritativeBalance(supabase, input.userId, input.counterpartyId);
+  // NOTE(FIN-04): repaymentId drives the idempotency key. Callers SHOULD supply a stable,
+  // pre-generated UUID for retry safety (see recordLending note above).
+  if (!input.repaymentId) {
+    console.warn(
+      '[people.ts:recordRepayment] repaymentId not provided — generated a new UUID. ' +
+      'Network-timeout retries without repaymentId will create duplicate postings.'
+    );
+  }
   const repaymentId = input.repaymentId || crypto.randomUUID();
   const txnDate = input.date ? input.date.split('T')[0] : new Date().toISOString().split('T')[0];
 

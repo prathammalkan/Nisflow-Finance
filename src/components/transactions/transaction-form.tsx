@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,13 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useCreateTransaction } from '@/lib/hooks/use-transactions';
+import { useCreateTransaction, useUpdateTransaction } from '@/lib/hooks/use-transactions';
 import { useCategories } from '@/lib/hooks/use-categories';
 import { useAccounts } from '@/lib/hooks/use-accounts';
+import type { Database } from '@/types/database';
 import { Sparkles, Loader2 } from 'lucide-react';
 import Decimal from 'decimal.js';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+
+type TransactionRow = Database['public']['Tables']['transactions']['Row'];
 
 const formSchema = z.object({
   type: z.enum(['Expense', 'Income', 'Transfer']),
@@ -54,13 +58,22 @@ const formSchema = z.object({
   }
 });
 
-export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+interface TransactionFormProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  transaction?: TransactionRow | null;
+}
+
+export function TransactionForm({ open, onOpenChange, transaction }: TransactionFormProps) {
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   
   const createTransaction = useCreateTransaction();
+  const updateTransaction = useUpdateTransaction();
   const { data: categories } = useCategories();
   const { data: accounts } = useAccounts(false);
+
+  const isEditing = !!transaction;
 
   const form = useForm<any>({
     resolver: zodResolver(formSchema),
@@ -70,9 +83,50 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
       account_id: '',
       date: format(new Date(), 'yyyy-MM-dd'),
       ownership: 'personal',
-      status: 'confirmed'
+      status: 'confirmed',
+      notes: '',
+      description: '',
+      category_id: '',
+      counterparty_id: '',
     }
   });
+
+  useEffect(() => {
+    if (transaction && open) {
+      const typeUpper = String(transaction.type || '').toUpperCase();
+      const mappedType = typeUpper.includes('INCOME') ? 'Income' : typeUpper.includes('TRANSFER') ? 'Transfer' : 'Expense';
+
+      form.reset({
+        type: mappedType as 'Expense' | 'Income' | 'Transfer',
+        amount: Math.abs(Number(transaction.amount || 0)).toString(),
+        account_id: transaction.account_id || '',
+        category_id: transaction.category_id || '',
+        description: transaction.description || '',
+        date: transaction.date ? format(new Date(transaction.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+        ownership: (transaction as any).ownership || 'personal',
+        status: transaction.status || 'confirmed',
+        notes: transaction.notes || '',
+        counterparty_id: (transaction as any).counterparty_id || '',
+      });
+      if (transaction.notes || (transaction as any).counterparty_id) {
+        setIsAdvanced(true);
+      }
+    } else if (!transaction && open) {
+      form.reset({
+        type: 'Expense',
+        amount: '',
+        account_id: '',
+        category_id: '',
+        description: '',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        ownership: 'personal',
+        status: 'confirmed',
+        notes: '',
+        counterparty_id: '',
+      });
+      setIsAdvanced(false);
+    }
+  }, [transaction, open, form]);
 
   const transactionType = form.watch('type');
 
@@ -103,7 +157,17 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      if (values.type === 'Transfer' && values.to_account_id) {
+      if (isEditing && transaction) {
+        await updateTransaction.mutateAsync({
+          id: transaction.id,
+          description: values.description || null,
+          category_id: values.category_id || null,
+          notes: values.notes || null,
+          ownership: values.ownership || 'personal',
+          counterparty_id: values.counterparty_id || null,
+        } as any);
+        toast.success('Transaction updated successfully');
+      } else if (values.type === 'Transfer' && values.to_account_id) {
         // Handle transfer - two transactions
         const outTx = await createTransaction.mutateAsync({
           amount: new Decimal(values.amount).toNumber(),
@@ -116,7 +180,7 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           status: values.status
         });
         
-        const inTx = await createTransaction.mutateAsync({
+        await createTransaction.mutateAsync({
           amount: new Decimal(values.amount).toNumber(),
           type: 'Transfer',
           direction: 'in',
@@ -127,9 +191,7 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           status: values.status,
           linked_transaction_id: (outTx as any).id
         });
-        
-        // Link them together - we'd need another call or it's handled in a trigger/RPC ideally
-        // In a real app we would use an RPC or server action to ensure transactionality.
+        toast.success('Transfer recorded');
       } else {
         // Normal transaction
         await createTransaction.mutateAsync({
@@ -145,8 +207,8 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
           notes: values.notes,
           counterparty_id: values.counterparty_id
         });
+        toast.success('Transaction saved');
       }
-      toast.success('Transaction saved');
       onOpenChange(false);
       form.reset();
     } catch (e) {
@@ -159,21 +221,23 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Add Transaction</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle>
         </DialogHeader>
         
         <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-4">
-          <Tabs 
-            value={transactionType} 
-            onValueChange={(v) => form.setValue('type', v as any)}
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="Expense">Expense</TabsTrigger>
-              <TabsTrigger value="Income">Income</TabsTrigger>
-              <TabsTrigger value="Transfer">Transfer</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {!isEditing && (
+            <Tabs 
+              value={transactionType} 
+              onValueChange={(v) => form.setValue('type', v as any)}
+              className="w-full"
+            >
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="Expense">Expense</TabsTrigger>
+                <TabsTrigger value="Income">Income</TabsTrigger>
+                <TabsTrigger value="Transfer">Transfer</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
 
           <div className="space-y-4 py-4">
             <div>
@@ -182,8 +246,14 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
                 step="0.01"
                 placeholder="₹ 0.00"
                 className="text-3xl h-16 text-center font-bold"
+                disabled={isEditing}
                 {...form.register('amount')}
               />
+              {isEditing && (
+                <p className="text-xs text-muted-foreground mt-1 text-center">
+                  Amount & account cannot be changed directly to preserve ledger audit trail.
+                </p>
+              )}
               {form.formState.errors.amount && (
                 <p className="text-sm text-red-500 mt-1 text-center">{form.formState.errors.amount.message as string}</p>
               )}
@@ -197,27 +267,26 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
                 <Select 
                   value={form.watch('account_id')} 
                   onChange={(e) => form.setValue('account_id', e.target.value)}
+                  disabled={isEditing}
                 >
-                  <option value="" disabled>Select account...</option>
-                  {accounts?.map(acc => (
-                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  <option value="" disabled>Select account</option>
+                  {accounts?.map((acc) => (
+                    <option key={acc.id} value={acc.id}>{acc.name} (₹{acc.balance})</option>
                   ))}
                 </Select>
-                {form.formState.errors.account_id && (
-                  <p className="text-sm text-red-500">{form.formState.errors.account_id.message as string}</p>
-                )}
               </div>
 
               {transactionType === 'Transfer' && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">To Account</label>
                   <Select 
-                    value={form.watch('to_account_id') || ''} 
+                    value={form.watch('to_account_id')} 
                     onChange={(e) => form.setValue('to_account_id', e.target.value)}
+                    disabled={isEditing}
                   >
-                    <option value="" disabled>Select account...</option>
-                    {accounts?.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    <option value="" disabled>Select destination</option>
+                    {accounts?.map((acc) => (
+                      <option key={acc.id} value={acc.id}>{acc.name} (₹{acc.balance})</option>
                     ))}
                   </Select>
                   {form.formState.errors.to_account_id && (
@@ -310,8 +379,13 @@ export function TransactionForm({ open, onOpenChange }: { open: boolean, onOpenC
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createTransaction.isPending}>
-              {createTransaction.isPending ? 'Saving...' : 'Save Transaction'}
+            <Button
+              type="submit"
+              disabled={isEditing ? updateTransaction.isPending : createTransaction.isPending}
+            >
+              {isEditing
+                ? (updateTransaction.isPending ? 'Saving...' : 'Save Changes')
+                : (createTransaction.isPending ? 'Saving...' : 'Save Transaction')}
             </Button>
           </DialogFooter>
         </form>

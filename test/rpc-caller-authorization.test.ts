@@ -65,7 +65,14 @@ function createSecureMockSupabase(initialState?: any) {
         in: (field: string, values: any[]) => {
           const prev = currentFilter;
           const valSet = new Set(values);
-          currentFilter = (r: any) => prev(r) && valSet.has(r[field]);
+          currentFilter = (r: any) => {
+            if (!prev(r)) return false;
+            if (field === 'journal_entries.status') {
+              const entry = state.journal_entries.find((e: any) => e.id === r.journal_entry_id);
+              return entry ? valSet.has(entry.status) : false;
+            }
+            return valSet.has(r[field]);
+          };
           return builder;
         },
         ilike: (field: string, pattern: string) => {

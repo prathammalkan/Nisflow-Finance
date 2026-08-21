@@ -26,8 +26,15 @@ export default function SpendingPage() {
   const daysInMonth = now.getDate();
   const dailyAverage = thisMonthSpending / Math.max(1, daysInMonth);
 
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
   const largestTransactions = recentTransactions
-    ?.filter(tx => tx.direction === 'out')
+    ?.filter(tx => {
+      if (tx.direction !== 'out') return false;
+      const txDate = new Date(tx.date);
+      return txDate.getFullYear() === currentYear && txDate.getMonth() === currentMonth;
+    })
     .sort((a, b) => Number(b.amount) - Number(a.amount))
     .slice(0, 5) || [];
 

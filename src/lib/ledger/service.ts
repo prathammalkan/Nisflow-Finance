@@ -329,11 +329,14 @@ export async function recordFinancialTransaction(
           entityId: loanUUID,
         });
 
-        lines = [
-          { ledgerAccountId: loanLedgerAccId, debitAmount: principal.toFixed(2), creditAmount: '0.00', memo: 'Loan Principal Repayment' },
-          { ledgerAccountId: intExpAccId, debitAmount: interest.toFixed(2), creditAmount: '0.00', memo: 'Loan Interest' },
-          { ledgerAccountId: sourceLedgerAccId, debitAmount: '0.00', creditAmount: formattedAmount, memo: params.description },
-        ];
+        lines = [];
+        if (principal.gt(0)) {
+          lines.push({ ledgerAccountId: loanLedgerAccId, debitAmount: principal.toFixed(2), creditAmount: '0.00', memo: 'Loan Principal Repayment' });
+        }
+        if (interest.gt(0)) {
+          lines.push({ ledgerAccountId: intExpAccId, debitAmount: interest.toFixed(2), creditAmount: '0.00', memo: 'Loan Interest' });
+        }
+        lines.push({ ledgerAccountId: sourceLedgerAccId, debitAmount: '0.00', creditAmount: formattedAmount, memo: params.description });
         break;
       }
 
@@ -491,14 +494,21 @@ export async function recordFinancialTransaction(
         return { success: false, error: `Unsupported transaction type: ${params.type}`, projectionSynced: false };
     }
 
-    // 3. Post to Authoritative Double-Entry Ledger
+    // FIN-03: Deterministic idempotency key derivation.
+    // If the caller provides an explicit key, use it.
+    // If not provided, derive deterministically from stable business inputs
+    // (userId + type + accountId + txnDate + amount + sourceId/description).
+    // NEVER use Date.now() or Math.random() — those produce non-deterministic keys that cause duplicate postings on retry.
+    const deterministicKey = params.idempotencyKey ||
+      `TXN:${params.userId}:${params.type}:${params.accountId}:${txnDate}:${formattedAmount}:${params.sourceId || params.description || 'default'}`;
+
     const postPayload: PostJournalEntryInput = {
       userId: params.userId,
       transactionDate: txnDate,
       description: params.description,
       sourceType: (params.sourceType as any) || 'manual',
       sourceId: params.sourceId || null,
-      idempotencyKey: params.idempotencyKey || `TXN:${params.userId}:${Date.now()}:${Math.random().toString(36).substring(2, 7)}`,
+      idempotencyKey: deterministicKey,
       lines,
       createdBy: params.userId,
       metadata: params.metadata || {},

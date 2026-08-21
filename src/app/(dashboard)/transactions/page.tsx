@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useTransactions } from '@/lib/hooks/use-transactions';
 import { formatINR } from '@/lib/finance/money';
 import { TransactionFilters } from '@/components/transactions/transaction-filters';
@@ -133,8 +134,8 @@ export default function TransactionsPage() {
       {/* Mobile: Card view */}
       <div className="md:hidden space-y-3">
         {(data?.data || []).map((tx: any) => (
-          <div key={tx.id} className="flex items-center justify-between p-4 rounded-xl border bg-card">
-            <div className="flex-1 min-w-0 mr-3">
+          <div key={tx.id} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:bg-muted/20 transition-colors">
+            <Link href={`/transactions/${tx.id}`} className="flex-1 min-w-0 mr-3">
               <p className="text-sm font-medium truncate">{tx.description || 'Unnamed Transaction'}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {tx.account?.name || 'Unknown'} · {format(parseISO(tx.date), 'dd MMM yyyy')}
@@ -142,12 +143,15 @@ export default function TransactionsPage() {
               {tx.category?.name && (
                 <p className="text-xs text-muted-foreground">{tx.category.name}</p>
               )}
-            </div>
-            <div className="text-right shrink-0">
-              <p className={cn("text-sm font-semibold", tx.direction === 'out' ? 'text-red-500' : 'text-emerald-500')}>
-                {tx.direction === 'out' ? '-' : '+'}{formatINR(new Decimal(tx.amount))}
-              </p>
-              <p className="text-[10px] text-muted-foreground capitalize">{tx.type}</p>
+            </Link>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="text-right">
+                <p className={cn("text-sm font-semibold", tx.direction === 'out' ? 'text-red-500' : 'text-emerald-500')}>
+                  {tx.direction === 'out' ? '-' : '+'}{formatINR(new Decimal(tx.amount))}
+                </p>
+                <p className="text-[10px] text-muted-foreground capitalize">{tx.type}</p>
+              </div>
+              <TransactionRowActions transaction={tx} />
             </div>
           </div>
         ))}

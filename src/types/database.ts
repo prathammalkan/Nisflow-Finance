@@ -42,8 +42,13 @@ export interface Database {
           name: string
           type: AccountType
           balance: number
+          current_balance?: number | null
           currency: string
           is_active: boolean
+          institution?: string | null
+          purpose?: string | null
+          color?: string | null
+          icon?: string | null
           created_at: string
           updated_at: string
         }
@@ -53,8 +58,13 @@ export interface Database {
           name: string
           type: AccountType
           balance?: number
+          current_balance?: number | null
           currency?: string
           is_active?: boolean
+          institution?: string | null
+          purpose?: string | null
+          color?: string | null
+          icon?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -64,8 +74,13 @@ export interface Database {
           name?: string
           type?: AccountType
           balance?: number
+          current_balance?: number | null
           currency?: string
           is_active?: boolean
+          institution?: string | null
+          purpose?: string | null
+          color?: string | null
+          icon?: string | null
           created_at?: string
           updated_at?: string
         }

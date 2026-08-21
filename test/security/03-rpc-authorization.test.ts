@@ -52,7 +52,8 @@ test('RPC [03-04]: All SECURITY DEFINER functions have explicit safe search_path
     '005_security_hardening.sql',
     '007_double_entry_ledger.sql',
     '009_forensic_remediation.sql',
-    '010_rpc_caller_authorization.sql'
+    '010_rpc_caller_authorization.sql',
+    '012_security_and_schema_alignment.sql'
   ];
 
   for (const file of migrationFiles) {

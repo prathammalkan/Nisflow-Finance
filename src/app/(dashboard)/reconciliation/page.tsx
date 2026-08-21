@@ -15,6 +15,8 @@ import { matchBankTransactions, BankStatementTransaction, LedgerTransaction } fr
 import { toast } from 'sonner';
 import { CheckCircle2, AlertCircle, RefreshCw, ArrowRightLeft, ShieldCheck } from 'lucide-react';
 
+import { executeReconciliationServer } from '@/app/actions/reconciliation';
+
 export default function ReconciliationPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [statementBalance, setStatementBalance] = useState<string>('');
@@ -92,56 +94,21 @@ export default function ReconciliationPage() {
     setIsReconciling(true);
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error('Not authenticated');
-
-      const todayIso = new Date().toISOString().split('T')[0];
-
-      // 1. Mark matched statement transactions
-      for (const pair of matchResult.matched) {
-        await (supabase.from('bank_statement_transactions') as any)
-          .update({
-            is_matched: true,
-            matched_transaction_id: pair.ledgerTx.id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', pair.bankTx.id);
-
-        // 2. Mark matched ledger transactions
-        await (supabase.from('transactions') as any)
-          .update({
-            reconciliation_status: 'reconciled',
-            status: 'reconciled',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', pair.ledgerTx.id)
-          .eq('user_id', userData.user.id);
-      }
-
-      // 3. Create reconciliation record
-      const { error: recError } = await (supabase.from('reconciliations') as any).insert({
-        user_id: userData.user.id,
-        account_id: selectedAccountId,
-        date: todayIso,
-        statement_balance: parsedStatementBalance.toNumber(),
-        ledger_balance: ledgerBalance.toNumber(),
+      const res = await executeReconciliationServer({
+        accountId: selectedAccountId,
+        statementBalance: parsedStatementBalance.toNumber(),
+        ledgerBalance: ledgerBalance.toNumber(),
         difference: difference.toNumber(),
-        status: isBalanced ? 'balanced' : 'discrepancy',
-        matched_count: matchResult.matched.length,
-        unmatched_count: matchResult.missingFromLedger.length + matchResult.missingFromBank.length,
-        completed_at: new Date().toISOString(),
+        matchedPairs: matchResult.matched.map(pair => ({
+          bankTxId: pair.bankTx.id,
+          ledgerTxId: pair.ledgerTx.id,
+        })),
+        unmatchedCount: matchResult.missingFromLedger.length + matchResult.missingFromBank.length,
       });
 
-      if (recError) throw recError;
-
-      // 4. Update account last_reconciled_at
-      await (supabase.from('accounts') as any)
-        .update({
-          last_reconciled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedAccountId)
-        .eq('user_id', userData.user.id);
+      if (!res.success) {
+        throw new Error(res.error || 'Reconciliation failed');
+      }
 
       toast.success(
         `Reconciliation completed. ${matchResult.matched.length} transaction pairs reconciled successfully.`

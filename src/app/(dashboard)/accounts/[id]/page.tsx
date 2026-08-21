@@ -1,19 +1,22 @@
 "use client";
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAccount, useAccountStats, useDeleteAccount } from '@/lib/hooks/use-accounts';
+import { useTransactions } from '@/lib/hooks/use-transactions';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatINR } from '@/lib/finance/money';
-import { ArrowLeftIcon, PencilIcon, TrashIcon, AlertCircleIcon } from 'lucide-react';
+import { ArrowLeftIcon, PencilIcon, TrashIcon, ArrowRightLeft, Loader2 } from 'lucide-react';
 import { AccountForm } from '@/components/accounts/account-form';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { generatePrintablePDFStatement } from '@/lib/export-statement';
 import { cn } from '@/lib/utils';
-// Placeholder for transactions - in a real app use hooks
+import { format, parseISO } from 'date-fns';
 import { Decimal } from 'decimal.js';
 
 export default function AccountDetailPage() {
@@ -26,7 +29,13 @@ export default function AccountDetailPage() {
   const { data: stats } = useAccountStats(id);
   const deleteAccount = useDeleteAccount();
   
+  const { data: txResult, isLoading: isTxLoading } = useTransactions({
+    account_id: id,
+    pageSize: 50,
+  });
+
   const [isEditFormOpen, setIsEditFormOpen] = React.useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
 
   if (isLoading) {
     return <div className="space-y-6"><Skeleton className="h-[200px] w-full" /></div>;
@@ -37,11 +46,12 @@ export default function AccountDetailPage() {
   }
 
   const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to deactivate this account?')) {
-      await deleteAccount.mutateAsync(account.id);
-      router.push('/accounts');
-    }
+    await deleteAccount.mutateAsync(account.id);
+    setIsDeleteDialogOpen(false);
+    router.push('/accounts');
   };
+
+  const transactions = txResult?.data || [];
 
   return (
     <div className="space-y-6">
@@ -56,8 +66,8 @@ export default function AccountDetailPage() {
               {!account.is_active && <Badge variant="destructive">Inactive</Badge>}
             </h1>
             <div className="flex items-center space-x-3 mt-2 text-muted-foreground">
-              <span>{account.institution}</span>
-              <span>•</span>
+              {account.institution && <span>{account.institution}</span>}
+              {account.institution && <span>•</span>}
               <Badge variant="outline">{account.type}</Badge>
               {account.purpose && (
                 <>
@@ -96,7 +106,7 @@ export default function AccountDetailPage() {
               Edit
             </Button>
             {account.is_active && (
-              <Button variant="destructive" size="sm" onClick={handleDelete}>
+              <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)}>
                 <TrashIcon className="mr-2 h-4 w-4" />
                 Deactivate
               </Button>
@@ -154,18 +164,124 @@ export default function AccountDetailPage() {
         </Card>
       </div>
 
-      <div className="rounded-md border p-8 flex flex-col items-center justify-center text-center space-y-3 bg-muted/20">
-        <AlertCircleIcon className="h-10 w-10 text-muted-foreground" />
-        <h3 className="text-lg font-medium">Transaction History</h3>
-        <p className="text-sm text-muted-foreground max-w-md">
-          Transactions component will be integrated here. It will show the last 50 transactions for this account with filters for date range, category, and type.
-        </p>
-      </div>
+      {/* Transaction History Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
+          <div>
+            <CardTitle className="text-lg font-bold">Transaction History</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Showing last 50 transactions for this account.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/transactions?account_id=${id}`}>
+              View All in Transactions
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isTxLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading transaction history...
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="py-12 flex flex-col items-center justify-center text-center space-y-2 text-muted-foreground">
+              <ArrowRightLeft className="h-10 w-10 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-foreground">No transactions found</p>
+              <p className="text-xs">No ledger records have been logged for this account yet.</p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/40 text-xs font-semibold text-muted-foreground uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Description</th>
+                      <th className="px-4 py-3 text-left">Category</th>
+                      <th className="px-4 py-3 text-left">Type</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {transactions.map((tx: any) => (
+                      <tr key={tx.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                          {format(parseISO(tx.date), 'dd MMM yyyy')}
+                        </td>
+                        <td className="px-4 py-3 font-medium">
+                          <Link href={`/transactions/${tx.id}`} className="hover:text-primary transition-colors">
+                            {tx.description || 'Unnamed Transaction'}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                          {tx.category?.name || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs capitalize text-muted-foreground">
+                          {tx.type}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className="text-[10px] capitalize">
+                            {tx.status}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">
+                          <span className={tx.direction === 'out' ? 'text-red-500' : 'text-emerald-500'}>
+                            {tx.direction === 'out' ? '-' : '+'}{formatINR(new Decimal(tx.amount))}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="md:hidden divide-y divide-border">
+                {transactions.map((tx: any) => (
+                  <Link
+                    key={tx.id}
+                    href={`/transactions/${tx.id}`}
+                    className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="text-sm font-medium truncate">{tx.description || 'Unnamed Transaction'}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {format(parseISO(tx.date), 'dd MMM yyyy')} · {tx.category?.name || tx.type}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={cn("text-sm font-semibold", tx.direction === 'out' ? 'text-red-500' : 'text-emerald-500')}>
+                        {tx.direction === 'out' ? '-' : '+'}{formatINR(new Decimal(tx.amount))}
+                      </p>
+                      <Badge variant="outline" className="text-[9px] uppercase tracking-wider">
+                        {tx.status}
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <AccountForm 
         open={isEditFormOpen} 
         onOpenChange={setIsEditFormOpen}
         account={account}
+      />
+
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Deactivate Account"
+        description={`Are you sure you want to deactivate "${account.name}"? Inactive accounts will be hidden from default balance summaries but their historical ledger entries will be preserved.`}
+        confirmLabel="Deactivate Account"
+        onConfirm={handleDelete}
+        isLoading={deleteAccount.isPending}
       />
     </div>
   );

@@ -208,8 +208,36 @@ function createMockSupabase(initialData: {
       if (fn === 'post_reversal_entry') {
         const original = client._store.journal_entries.find((e: any) => e.id === args.p_original_entry_id);
         if (!original) return { data: null, error: { message: 'Original entry not found' } };
+        if (original.status === 'reversed') return { data: null, error: { message: 'Entry already reversed' } };
         original.status = 'reversed';
-        return { data: `rev-${Date.now()}`, error: null };
+        const revId = `rev-${Date.now()}`;
+        client._store.journal_entries.push({
+          id: revId,
+          user_id: args.p_user_id,
+          entry_number: client._store.journal_entries.length + 1,
+          transaction_date: new Date().toISOString().split('T')[0],
+          description: `REVERSAL: ${original.description}`,
+          source_type: 'reversal',
+          idempotency_key: args.p_idempotency_key || `REV:${args.p_original_entry_id}`,
+          status: 'posted',
+          created_by: args.p_created_by,
+          created_at: new Date().toISOString(),
+        });
+        const origLines = client._store.journal_lines.filter((l: any) => l.journal_entry_id === original.id);
+        for (const l of origLines) {
+          client._store.journal_lines.push({
+            id: `jl-rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            journal_entry_id: revId,
+            ledger_account_id: l.ledger_account_id,
+            user_id: l.user_id,
+            debit_amount: l.credit_amount,
+            credit_amount: l.debit_amount,
+            currency: l.currency || 'INR',
+            memo: `Reversal of ${l.memo || original.description}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+        return { data: revId, error: null };
       }
 
       return { data: null, error: { message: 'Unknown RPC' } };
@@ -701,8 +729,8 @@ test('17. Cross-User Ledger Account Rejection: Attempting to debit account of an
   assert.equal(validation.isValid, true);
 });
 
-// Test 18: Reversed-Entry Exclusion
-test('18. Reversed-Entry Exclusion: Reversed journal entries are excluded from authoritative balance', async () => {
+// Test 18: Reversed-Entry Cancellation in Double-Entry
+test('18. Reversed-Entry Cancellation: Original entry + reversal entry cancel mathematically to leave only active entries', async () => {
   const supabase = createMockSupabase({
     counterparties: [{ id: 'cp-amit', user_id: 'user-1', name: 'Amit' }],
     ledger_accounts: [
@@ -712,18 +740,22 @@ test('18. Reversed-Entry Exclusion: Reversed journal entries are excluded from a
     journal_entries: [
       { id: 'je-active', user_id: 'user-1', status: 'posted' },
       { id: 'je-reversed', user_id: 'user-1', status: 'reversed' },
+      { id: 'je-reversal', user_id: 'user-1', status: 'posted', reversal_of_id: 'je-reversed' },
     ],
     journal_lines: [
       { id: 'jl-1', journal_entry_id: 'je-active', ledger_account_id: 'ast-rec-amit', user_id: 'user-1', debit_amount: 5000, credit_amount: 0 },
       { id: 'jl-2', journal_entry_id: 'je-active', ledger_account_id: 'ast-bank', user_id: 'user-1', debit_amount: 0, credit_amount: 5000 },
-      // Reversed entry of 3000
+      // Original reversed entry of 3000 (Dr Receivable)
       { id: 'jl-3', journal_entry_id: 'je-reversed', ledger_account_id: 'ast-rec-amit', user_id: 'user-1', debit_amount: 3000, credit_amount: 0 },
       { id: 'jl-4', journal_entry_id: 'je-reversed', ledger_account_id: 'ast-bank', user_id: 'user-1', debit_amount: 0, credit_amount: 3000 },
+      // Reversal entry of 3000 (Cr Receivable - inverts Dr Receivable)
+      { id: 'jl-5', journal_entry_id: 'je-reversal', ledger_account_id: 'ast-rec-amit', user_id: 'user-1', debit_amount: 0, credit_amount: 3000 },
+      { id: 'jl-6', journal_entry_id: 'je-reversal', ledger_account_id: 'ast-bank', user_id: 'user-1', debit_amount: 3000, credit_amount: 0 },
     ],
   });
 
   const balances = await getCounterpartyAuthoritativeBalance(supabase, 'user-1', 'cp-amit');
-  assert.equal(balances.receivableBalance, 5000, 'Must only include 5000 from posted entry');
+  assert.equal(balances.receivableBalance, 5000, 'Reversal lines mathematically cancel original lines: 5000 + 3000 - 3000 = 5000');
 });
 
 // Test 19: Projection Mismatch Detection

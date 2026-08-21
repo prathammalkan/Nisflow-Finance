@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useDocuments, useDeleteDocument, getDocumentSignedUrl } from '@/lib/hooks/use-documents';
 import UploadDialog from '@/components/documents/upload-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FileText, ExternalLink, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,6 +13,7 @@ export default function DocumentVaultPage() {
   const { mutateAsync: deleteDoc, isPending: isDeleting } = useDeleteDocument();
   const [filter, setFilter] = useState('');
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<any | null>(null);
 
   const handleView = async (doc: any) => {
     try {
@@ -30,14 +32,8 @@ export default function DocumentVaultPage() {
     }
   };
 
-  const handleDelete = async (doc: any) => {
-    if (!confirm(`Are you sure you want to delete "${doc.name}"?`)) return;
-    try {
-      await deleteDoc(doc);
-      toast.success('Document deleted successfully');
-    } catch {
-      toast.error('Failed to delete document');
-    }
+  const handleDelete = (doc: any) => {
+    setDeletingDoc(doc);
   };
 
   return (
@@ -129,6 +125,26 @@ export default function DocumentVaultPage() {
             ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(open) => { if (!open) setDeletingDoc(null); }}
+        title="Delete Document"
+        description={deletingDoc ? `Are you sure you want to permanently delete "${deletingDoc.name}" from encrypted storage?` : ''}
+        confirmLabel="Delete Document"
+        onConfirm={async () => {
+          if (deletingDoc) {
+            try {
+              await deleteDoc(deletingDoc);
+              setDeletingDoc(null);
+              toast.success('Document deleted successfully');
+            } catch {
+              toast.error('Failed to delete document');
+            }
+          }
+        }}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

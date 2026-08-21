@@ -104,12 +104,18 @@ export function AccountForm({ open, onOpenChange, account }: AccountFormProps) {
           id: account.id,
           name: data.name,
           type: (typeMapping[data.type] || 'other') as any,
+          institution: data.institution || null,
+          purpose: data.purpose || null,
+          color: data.color || null,
         } as any);
       } else {
         await createAccount.mutateAsync({
           name: data.name,
           type: (typeMapping[data.type] || 'other') as any,
           balance: balanceDecimal.toNumber(),
+          institution: data.institution || null,
+          purpose: data.purpose || null,
+          color: data.color || null,
           is_active: true,
         } as any);
       }

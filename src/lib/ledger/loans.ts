@@ -82,8 +82,20 @@ export interface RecordLoanEMIParams {
 }
 
 /**
- * Ensures the liability account (LIA-LOAN-<id>) and interest expense account (EXP-LOAN-INT-<id>) exist.
- * Enforces tenant ownership before provisioning.
+ * Ensures the correct ledger accounts exist for a loan, based on whether the loan was
+ * taken (borrowed by user) or given (lent by user).
+ *
+ * TAKEN loan (user is borrower):
+ *   - Main account:    liability  (LIA-LOAN-<id>)
+ *   - Interest account: expense   (EXP-LOAN-INT-<id>)
+ *
+ * GIVEN loan (user is lender — money goes out, interest comes in):
+ *   - Main account:    asset      (AST-LOAN-<id>)
+ *   - Interest account: income    (INC-LOAN-INT-<id>)
+ *
+ * FIN-02: Previously this always provisioned 'liability + expense', which was incorrect
+ * for 'given' loans. The fix reads loan_type from the database before provisioning.
+ * Existing 'taken' loans are unaffected — the code lookup returns the existing LIA-LOAN-* row.
  */
 export async function ensureLoanLedgerAccounts(
   supabase: SupabaseClient<Database>,
@@ -93,7 +105,7 @@ export async function ensureLoanLedgerAccounts(
 ): Promise<{ loanLedgerAccId: string; interestExpenseAccId: string }> {
   // 1. Verify tenant ownership if loan exists in database
   const { data: loan, error: loanErr } = await (supabase.from('loans') as any)
-    .select('id, user_id, name')
+    .select('id, user_id, name, loan_type')
     .eq('id', loanId)
     .maybeSingle();
 
@@ -103,25 +115,51 @@ export async function ensureLoanLedgerAccounts(
 
   const nameToUse = loan?.name || loanName || `Loan ${loanId}`;
 
-  // 2. Ensure Liability Account (LIA-LOAN-<loanId>)
-  const loanLedgerAccId = await ensureLedgerAccount(supabase, userId, {
-    code: `LIA-LOAN-${loanId}`,
-    name: `Loan Liability: ${nameToUse}`,
-    accountType: 'liability',
-    entityType: 'loan',
-    entityId: loanId,
-  });
+  // Determine direction: 'given' = user lent money (asset + income)
+  //                      anything else = user borrowed money (liability + expense)
+  const isGiven = loan?.loan_type === 'given';
 
-  // 3. Ensure Interest Expense Account (EXP-LOAN-INT-<loanId>)
-  const interestExpenseAccId = await ensureLedgerAccount(supabase, userId, {
-    code: `EXP-LOAN-INT-${loanId}`,
-    name: `Loan Interest: ${nameToUse}`,
-    accountType: 'expense',
-    entityType: 'loan_interest',
-    entityId: loanId,
-  });
+  if (isGiven) {
+    // 2a. Ensure Asset Account (AST-LOAN-<loanId>) — the money user is owed back
+    const loanLedgerAccId = await ensureLedgerAccount(supabase, userId, {
+      code: `AST-LOAN-${loanId}`,
+      name: `Loan Receivable: ${nameToUse}`,
+      accountType: 'asset',
+      entityType: 'loan',
+      entityId: loanId,
+    });
 
-  return { loanLedgerAccId, interestExpenseAccId };
+    // 2b. Ensure Income Account (INC-LOAN-INT-<loanId>) — interest earned
+    const interestExpenseAccId = await ensureLedgerAccount(supabase, userId, {
+      code: `INC-LOAN-INT-${loanId}`,
+      name: `Loan Interest Income: ${nameToUse}`,
+      accountType: 'income',
+      entityType: 'loan_interest_income',
+      entityId: loanId,
+    });
+
+    return { loanLedgerAccId, interestExpenseAccId };
+  } else {
+    // 2a. Ensure Liability Account (LIA-LOAN-<loanId>) — existing behavior for taken loans
+    const loanLedgerAccId = await ensureLedgerAccount(supabase, userId, {
+      code: `LIA-LOAN-${loanId}`,
+      name: `Loan Liability: ${nameToUse}`,
+      accountType: 'liability',
+      entityType: 'loan',
+      entityId: loanId,
+    });
+
+    // 2b. Ensure Interest Expense Account (EXP-LOAN-INT-<loanId>)
+    const interestExpenseAccId = await ensureLedgerAccount(supabase, userId, {
+      code: `EXP-LOAN-INT-${loanId}`,
+      name: `Loan Interest: ${nameToUse}`,
+      accountType: 'expense',
+      entityType: 'loan_interest',
+      entityId: loanId,
+    });
+
+    return { loanLedgerAccId, interestExpenseAccId };
+  }
 }
 
 /**
@@ -150,7 +188,7 @@ export async function getLoanAuthoritativeBalance(
     loanName
   );
 
-  // Fetch all posted lines for the loan liability and interest expense accounts
+  // Fetch all posted and reversed lines for the loan liability and interest expense accounts
   const { data: lines, error: linesError } = await (supabase.from('journal_lines') as any)
     .select(`
       id,
@@ -160,44 +198,74 @@ export async function getLoanAuthoritativeBalance(
       journal_entries!inner (
         id,
         status,
-        user_id
+        user_id,
+        source_type
       )
     `)
     .in('ledger_account_id', [loanLedgerAccId, interestExpenseAccId])
     .eq('user_id', userId)
-    .eq('journal_entries.status', 'posted');
+    .in('journal_entries.status', ['posted', 'reversed']);
 
   if (linesError) {
     throw new Error(`Failed to calculate loan authoritative balance: ${linesError.message}`);
   }
 
-  let totalPrincipalCredits = new Decimal(0); // Disbursements / Increases
-  let totalPrincipalDebits = new Decimal(0);  // Principal Repayments
-  let totalInterestDebits = new Decimal(0);   // Interest Expense
+  let totalDisbursedCredits = new Decimal(0);
+  let totalDisbursedDebits = new Decimal(0);
+  let totalEmiDebits = new Decimal(0);
+  let totalEmiCredits = new Decimal(0);
+  let totalInterestDebits = new Decimal(0);
   let totalInterestCredits = new Decimal(0);
 
   for (const line of lines || []) {
+    const entry = line.journal_entries;
+    const sourceType = entry?.source_type;
+
     if (line.ledger_account_id === loanLedgerAccId) {
-      totalPrincipalCredits = totalPrincipalCredits.plus(new Decimal(line.credit_amount || 0));
-      totalPrincipalDebits = totalPrincipalDebits.plus(new Decimal(line.debit_amount || 0));
+      if (sourceType === 'loan_disbursement') {
+        totalDisbursedCredits = totalDisbursedCredits.plus(new Decimal(line.credit_amount || 0));
+        totalDisbursedDebits = totalDisbursedDebits.plus(new Decimal(line.debit_amount || 0));
+      } else if (sourceType === 'loan_emi') {
+        totalEmiDebits = totalEmiDebits.plus(new Decimal(line.debit_amount || 0));
+        totalEmiCredits = totalEmiCredits.plus(new Decimal(line.credit_amount || 0));
+      } else if (sourceType === 'reversal') {
+        // In a reversal of disbursement, line has debit_amount > 0
+        // In a reversal of EMI, line has credit_amount > 0
+        if (Number(line.debit_amount) > 0) {
+          totalDisbursedDebits = totalDisbursedDebits.plus(new Decimal(line.debit_amount));
+        } else if (Number(line.credit_amount) > 0) {
+          totalEmiCredits = totalEmiCredits.plus(new Decimal(line.credit_amount));
+        }
+      } else {
+        if (Number(line.credit_amount) > 0) {
+          totalDisbursedCredits = totalDisbursedCredits.plus(new Decimal(line.credit_amount));
+        } else {
+          totalEmiDebits = totalEmiDebits.plus(new Decimal(line.debit_amount));
+        }
+      }
     } else if (line.ledger_account_id === interestExpenseAccId) {
       totalInterestDebits = totalInterestDebits.plus(new Decimal(line.debit_amount || 0));
       totalInterestCredits = totalInterestCredits.plus(new Decimal(line.credit_amount || 0));
     }
   }
 
-  // Outstanding Principal = Credits - Debits on Liability Account
-  const outstandingPrincipal = totalPrincipalCredits.minus(totalPrincipalDebits);
-  const totalInterestPaid = totalInterestDebits.minus(totalInterestCredits);
-  const isSettled = outstandingPrincipal.lte(0);
+  // Net Disbursed = Disbursements - Disbursement Reversals
+  const netDisbursed = Decimal.max(0, totalDisbursedCredits.minus(totalDisbursedDebits));
+  // Net Principal Paid = EMI Principal Payments - EMI Reversals
+  const netPrincipalPaid = Decimal.max(0, totalEmiDebits.minus(totalEmiCredits));
+  // Outstanding Principal = Net Disbursed - Net Principal Paid
+  const outstandingPrincipal = Decimal.max(0, netDisbursed.minus(netPrincipalPaid));
+  // Total Interest Paid = EMI Interest - Interest Reversals
+  const totalInterestPaid = Decimal.max(0, totalInterestDebits.minus(totalInterestCredits));
+  const isSettled = netDisbursed.gt(0) ? outstandingPrincipal.lte(0) : true;
 
   return {
     loanId,
     loanName,
-    outstandingPrincipal: Decimal.max(0, outstandingPrincipal),
-    totalPrincipalPaid: totalPrincipalDebits,
-    totalInterestPaid: Decimal.max(0, totalInterestPaid),
-    originalDisbursed: totalPrincipalCredits,
+    outstandingPrincipal,
+    totalPrincipalPaid: netPrincipalPaid,
+    totalInterestPaid,
+    originalDisbursed: netDisbursed,
     isSettled,
     ledgerAccountId: loanLedgerAccId,
     interestExpenseAccountId: interestExpenseAccId,
@@ -226,12 +294,16 @@ export async function getLoansAuthoritativeSummary(
   let settledCount = 0;
 
   const items: LoanLedgerSummaryItem[] = [];
+  const validLoans = (loans || []).filter((l: any) => l.status !== 'deleted' && l.is_deleted !== true);
 
-  for (const l of loans || []) {
-    if (l.status === 'deleted' || l.is_deleted === true) {
-      continue;
-    }
-    const balance = await getLoanAuthoritativeBalance(supabase, userId, l.id);
+  // PERF-01: Fetch all loan authoritative balances in parallel rather than serial N+1 loop
+  const balances = await Promise.all(
+    validLoans.map((l: any) => getLoanAuthoritativeBalance(supabase, userId, l.id))
+  );
+
+  for (let i = 0; i < validLoans.length; i++) {
+    const l = validLoans[i];
+    const balance = balances[i];
 
     const outstandingNum = balance.outstandingPrincipal.toNumber();
     const interestPaidNum = balance.totalInterestPaid.toNumber();
@@ -494,7 +566,12 @@ export async function recordLoanEMI(
   }
 
   const txnDate = params.date || new Date().toISOString().split('T')[0];
-  const idempotencyKey = params.idempotencyKey || `LOAN:EMI:${params.loanId}:${txnDate}`;
+  // NOTE(FIN-04): The idempotency key must distinguish genuinely different EMI payments on the
+  // same date AND remain deterministic for an identical retry. Include normalized (2dp) principal
+  // and interest so two different payments on the same date get distinct keys, while an identical
+  // retry of the same payment gets the same key.
+  const idempotencyKey = params.idempotencyKey ||
+    `LOAN:EMI:${params.loanId}:${txnDate}:${principalDec.toFixed(2)}:${interestDec.toFixed(2)}`;
 
   // 2. Post compound entry to double-entry ledger
   const ledgerResult = await recordFinancialTransaction(supabase, {

@@ -8,6 +8,7 @@ import {
   useProcessDueRecurring,
 } from '@/lib/hooks/use-recurring';
 import { RecurringForm } from '@/components/recurring/recurring-form';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatINR } from '@/lib/finance/money';
 import { PageHeader } from '@/components/ui/page-header';
 import Decimal from 'decimal.js';
@@ -26,6 +27,7 @@ export default function RecurringPage() {
   const processDue = useProcessDueRecurring();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [deletingRecurringId, setDeletingRecurringId] = useState<string | null>(null);
 
   const today = new Date();
   const thisMonth = today.getMonth();
@@ -184,7 +186,7 @@ export default function RecurringPage() {
                     <Pencil className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => { if (confirm('Delete this recurring transaction?')) deleteR.mutate(r.id); }}
+                    onClick={() => setDeletingRecurringId(r.id)}
                     className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 hover:text-rose-600 transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -197,6 +199,21 @@ export default function RecurringPage() {
       )}
 
       <RecurringForm open={formOpen} onOpenChange={setFormOpen} initialData={editing} />
+
+      <ConfirmDialog
+        open={!!deletingRecurringId}
+        onOpenChange={(open) => { if (!open) setDeletingRecurringId(null); }}
+        title="Delete Recurring Schedule"
+        description="Are you sure you want to delete this recurring transaction schedule?"
+        confirmLabel="Delete Schedule"
+        onConfirm={() => {
+          if (deletingRecurringId) {
+            deleteR.mutate(deletingRecurringId);
+            setDeletingRecurringId(null);
+          }
+        }}
+        isLoading={deleteR.isPending}
+      />
     </div>
   );
 }

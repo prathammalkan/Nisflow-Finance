@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useCreateSavingsGoal, useUpdateSavingsGoal, useDeleteSavingsGoal } from "@/lib/hooks/use-savings-goals";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface SavingsGoalFormProps {
   isOpen: boolean;
@@ -25,6 +26,8 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
     color: "#3b82f6"
   });
 
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
   const createMutation = useCreateSavingsGoal();
   const updateMutation = useUpdateSavingsGoal();
   const deleteMutation = useDeleteSavingsGoal();
@@ -35,7 +38,7 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
         name: initialData.name || "",
         target_amount: initialData.target_amount?.toString() || "",
         current_amount: initialData.current_amount?.toString() || "0",
-        deadline: initialData.deadline ? initialData.deadline.split("T")[0] : "",
+        deadline: initialData.deadline || "",
         monthly_contribution: initialData.monthly_contribution?.toString() || "",
         status: initialData.status || "active",
         color: initialData.color || "#3b82f6"
@@ -58,15 +61,21 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     const payload = {
-      ...formData,
-      target_amount: Number(formData.target_amount) || 0,
-      current_amount: Number(formData.current_amount) || 0,
-      monthly_contribution: formData.monthly_contribution ? Number(formData.monthly_contribution) : null,
-      deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null
+      name: formData.name,
+      target_amount: parseFloat(formData.target_amount) || 0,
+      current_amount: parseFloat(formData.current_amount) || 0,
+      deadline: formData.deadline || null,
+      monthly_contribution: formData.monthly_contribution ? parseFloat(formData.monthly_contribution) : null,
+      status: formData.status,
+      color: formData.color
     };
 
     if (initialData?.id) {
@@ -81,9 +90,12 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
   };
 
   const handleDelete = () => {
-    if (initialData?.id && confirm("Are you sure you want to delete this goal?")) {
+    if (initialData?.id) {
       deleteMutation.mutate(initialData.id, {
-        onSuccess: () => onClose()
+        onSuccess: () => {
+          setIsDeleteDialogOpen(false);
+          onClose();
+        }
       });
     }
   };
@@ -201,7 +213,7 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
               <Button 
                 type="button" 
                 variant="destructive" 
-                onClick={handleDelete}
+                onClick={() => setIsDeleteDialogOpen(true)}
                 disabled={deleteMutation.isPending || isPending}
               >
                 Delete
@@ -217,6 +229,16 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
             </div>
           </DialogFooter>
         </form>
+
+        <ConfirmDialog
+          open={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+          title="Delete Savings Goal"
+          description={`Are you sure you want to delete "${formData.name || 'this goal'}"?`}
+          confirmLabel="Delete Goal"
+          onConfirm={handleDelete}
+          isLoading={deleteMutation.isPending}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateRule, useUpdateRule } from "@/lib/hooks/use-rules";
 import { PlusCircle, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface RuleFormProps {
   isOpen: boolean;
@@ -71,7 +72,7 @@ export function RuleForm({ isOpen, onClose, initialData }: RuleFormProps) {
     const validConditions = conditions.filter(c => c.field && c.operator && c.value.trim() !== "");
     
     if (validConditions.length === 0) {
-      alert("Please add at least one valid condition.");
+      toast.error("Please add at least one valid condition.");
       return;
     }
 

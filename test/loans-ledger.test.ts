@@ -252,6 +252,31 @@ function createMockSupabase(initialState: {
 
         original.status = 'reversed';
         const reversalId = `rev-${Date.now()}`;
+        state.journalEntries.push({
+          id: reversalId,
+          user_id: p_user_id,
+          transaction_date: new Date().toISOString().split('T')[0],
+          description: `REVERSAL: ${original.description}`,
+          source_type: 'reversal',
+          idempotency_key: params.p_idempotency_key,
+          status: 'posted',
+          created_at: new Date().toISOString(),
+        });
+
+        const origLines = state.journalLines.filter(l => l.journal_entry_id === p_original_entry_id);
+        for (const l of origLines) {
+          state.journalLines.push({
+            id: `jl-rev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            journal_entry_id: reversalId,
+            ledger_account_id: l.ledger_account_id,
+            user_id: p_user_id,
+            debit_amount: l.credit_amount,
+            credit_amount: l.debit_amount,
+            memo: `Reversal of ${l.memo || original.description}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+
         return { data: reversalId, error: null };
       }
 

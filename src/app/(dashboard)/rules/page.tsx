@@ -5,6 +5,7 @@ import { useRules, useDeleteRule } from "@/lib/hooks/use-rules";
 
 import { Button } from "@/components/ui/button";
 import { RuleForm } from "@/components/rules/rule-form";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PlusCircle, Wand2, Trash2, Edit, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,6 +14,7 @@ export default function RulesPage() {
   const deleteMutation = useDeleteRule();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedRule, setSelectedRule] = useState<any>(null);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
   const handleCreate = () => {
     setSelectedRule(null);
@@ -26,9 +28,7 @@ export default function RulesPage() {
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this rule?")) {
-      deleteMutation.mutate(id);
-    }
+    setDeletingRuleId(id);
   };
 
   return (
@@ -144,6 +144,21 @@ export default function RulesPage() {
         isOpen={isFormOpen} 
         onClose={() => setIsFormOpen(false)} 
         initialData={selectedRule} 
+      />
+
+      <ConfirmDialog
+        open={!!deletingRuleId}
+        onOpenChange={(open) => { if (!open) setDeletingRuleId(null); }}
+        title="Delete Transaction Rule"
+        description="Are you sure you want to delete this auto-categorization rule?"
+        confirmLabel="Delete Rule"
+        onConfirm={() => {
+          if (deletingRuleId) {
+            deleteMutation.mutate(deletingRuleId);
+            setDeletingRuleId(null);
+          }
+        }}
+        isLoading={deleteMutation.isPending}
       />
     </div>
   );

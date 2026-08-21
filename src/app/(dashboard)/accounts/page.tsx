@@ -26,7 +26,7 @@ export default function AccountsPage() {
     return accounts.reduce((acc, account) => {
       // Typically only sum up active accounts for total wealth, or based on purpose
       if (account.is_active) {
-        return acc.plus(new Decimal(account.balance));
+        return acc.plus(new Decimal(account.current_balance ?? account.balance ?? 0));
       }
       return acc;
     }, new Decimal(0));
