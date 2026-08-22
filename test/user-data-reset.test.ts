@@ -916,5 +916,47 @@ test('USER DATA RESET [14]: Schema Definition Invariant — audit_logs table exp
   );
 });
 
+test('USER DATA RESET [15]: Trigger Fix Invariant — migration 014 updates immutability triggers to respect nisflow.allow_data_reset bypass', () => {
+  const mig014 = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/014_reset_trigger_fix.sql'),
+    'utf-8'
+  );
 
+  // 1. fn_enforce_journal_line_immutability must check nisflow.allow_data_reset
+  assert.match(
+    mig014,
+    /fn_enforce_journal_line_immutability/,
+    'Migration 014 must define fn_enforce_journal_line_immutability'
+  );
+  assert.match(
+    mig014,
+    /current_setting\('nisflow\.allow_data_reset',\s*true\)\s*=\s*'on'/,
+    'Migration 014 journal_line trigger must check nisflow.allow_data_reset = on'
+  );
 
+  // 2. fn_enforce_journal_entry_immutability must check nisflow.allow_data_reset
+  assert.match(
+    mig014,
+    /fn_enforce_journal_entry_immutability/,
+    'Migration 014 must define fn_enforce_journal_entry_immutability'
+  );
+
+  // 3. Normal immutability error messages must still be present (immutability preserved)
+  assert.match(
+    mig014,
+    /Posted journal lines are immutable/,
+    'Migration 014 must preserve journal_lines immutability error for normal deletes'
+  );
+  assert.match(
+    mig014,
+    /Journal entries cannot be deleted/,
+    'Migration 014 must preserve journal_entries immutability error for normal deletes'
+  );
+
+  // 4. Must use CREATE OR REPLACE (not DROP TRIGGER) — non-destructive
+  assert.doesNotMatch(
+    mig014,
+    /DROP\s+TRIGGER/i,
+    'Migration 014 must NOT drop triggers — use CREATE OR REPLACE FUNCTION only'
+  );
+});
