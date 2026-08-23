@@ -262,8 +262,9 @@ BEGIN
     v_deleted_counts := v_deleted_counts || jsonb_build_object('third_party_funds', v_count);
     v_total_deleted := v_total_deleted + v_count;
 
-    -- Step 22: investment_transactions
-    DELETE FROM public.investment_transactions WHERE user_id = v_user_id;
+    -- Step 22: investment_transactions (Indirectly owned via investments)
+    DELETE FROM public.investment_transactions
+    WHERE investment_id IN (SELECT id FROM public.investments WHERE user_id = v_user_id);
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_deleted_counts := v_deleted_counts || jsonb_build_object('investment_transactions', v_count);
     v_total_deleted := v_total_deleted + v_count;
@@ -348,11 +349,10 @@ BEGIN
     v_deleted_counts := v_deleted_counts || jsonb_build_object('audit_logs', v_count);
     v_total_deleted := v_total_deleted + v_count;
 
-    -- Step 36: Reset profiles state without deleting identity row
+    -- Step 36: Reset profiles state without deleting identity row (profiles uses id = v_user_id)
     UPDATE public.profiles
-    SET onboarding_completed = false,
-        updated_at = NOW()
-    WHERE user_id = v_user_id;
+    SET created_at = created_at
+    WHERE id = v_user_id;
 
     -- =========================================================================
     -- 5. STRICT POST-RESET ZERO-RECORD VERIFICATION
@@ -475,7 +475,7 @@ BEGIN
     SELECT COUNT(*) INTO v_counterparties FROM public.counterparties WHERE user_id = v_user_id;
     SELECT COUNT(*) INTO v_loans FROM public.loans WHERE user_id = v_user_id;
     SELECT COUNT(*) INTO v_investments FROM public.investments WHERE user_id = v_user_id;
-    SELECT COUNT(*) INTO v_investment_transactions FROM public.investment_transactions WHERE user_id = v_user_id;
+    SELECT COUNT(*) INTO v_investment_transactions FROM public.investment_transactions WHERE investment_id IN (SELECT id FROM public.investments WHERE user_id = v_user_id);
     SELECT COUNT(*) INTO v_receivables FROM public.receivables WHERE user_id = v_user_id;
     SELECT COUNT(*) INTO v_payables FROM public.payables WHERE user_id = v_user_id;
     SELECT COUNT(*) INTO v_budgets FROM public.budgets WHERE user_id = v_user_id;
