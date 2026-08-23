@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     ).join('\n');
 
     const { text } = await generateText({
-      model: google('gemini-2.5-flash'),
+      model: google(process.env.GEMINI_MODEL || 'gemini-3.6-flash'),
       system: `You are NisFlow Finance, a concise financial assistant. 
 Review the user's transaction list and write a short 2–3 paragraph markdown summary.
 Mention their biggest expense category, highlight any income or savings, and give one actionable tip.

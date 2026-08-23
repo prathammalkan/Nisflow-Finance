@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       // Hardened Context: Fetch bounded subsets with minimal required fields (Least-Privilege context)
       supabase.from('accounts').select('id, name, type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
       supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
-      supabase.from('loans').select('id, name, type, principal_amount').eq('user_id', user.id).limit(20),
+      supabase.from('loans').select('id, name, loan_type, principal_amount').eq('user_id', user.id).limit(20),
       supabase.from('investments').select('id, symbol, name, quantity, purchase_price, current_value').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
       supabase.from('ledger_accounts').select('id, account_type, entity_type, entity_id').eq('user_id', user.id),
@@ -153,7 +153,7 @@ ${recentLines}
     }
 
     // 4. Least-Privilege Loan Scoping (Only fetch loan ledger balance when loan/emi is mentioned)
-    const loanList: Array<{ id: string; name: string; type: string }> = (loans as any) || [];
+    const loanList: Array<{ id: string; name: string; loan_type?: string; type?: string }> = (loans as any) || [];
     const matchedLoan = loanList.find((l) =>
       l.name && (lastUserMsg.includes(l.name.toLowerCase()) || lastUserMsg.includes('loan') || lastUserMsg.includes('emi'))
     );
@@ -164,7 +164,7 @@ ${recentLines}
         const loanBal = await getLoanAuthoritativeBalance(supabase as any, user.id, matchedLoan.id);
         loanSpecificContext = `
 TARGET LOAN LEDGER CONTEXT (Authoritative Double-Entry from Ledger):
-- Loan: ${loanBal.loanName} (Type: ${matchedLoan.type})
+- Loan: ${loanBal.loanName} (Type: ${matchedLoan.loan_type || matchedLoan.type || 'standard'})
 - Outstanding Principal: ₹${loanBal.outstandingPrincipal.toFixed(2)}
 - Total Disbursed: ₹${loanBal.originalDisbursed.toFixed(2)}
 - Total Principal Repaid: ₹${loanBal.totalPrincipalPaid.toFixed(2)}
@@ -375,7 +375,7 @@ STRICT SCOPE RULES:
     }
 
     const googleProvider = createGoogle({ apiKey });
-    const selectedModel = 'gemini-2.5-flash';
+    const selectedModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
     console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
 
