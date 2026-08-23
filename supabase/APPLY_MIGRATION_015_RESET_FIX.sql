@@ -275,8 +275,7 @@ BEGIN
     v_deleted_counts := v_deleted_counts || jsonb_build_object('ipos', v_count);
     v_total_deleted := v_total_deleted + v_count;
 
-    -- Step 26: transactions (Break self-reference cycles, then delete)
-    UPDATE public.transactions SET linked_transaction_id = NULL WHERE user_id = v_user_id;
+    -- Step 26: transactions
     DELETE FROM public.transactions WHERE user_id = v_user_id;
     GET DIAGNOSTICS v_count = ROW_COUNT;
     v_deleted_counts := v_deleted_counts || jsonb_build_object('transactions', v_count);
