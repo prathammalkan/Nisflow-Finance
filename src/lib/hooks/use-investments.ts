@@ -59,16 +59,9 @@ export function useCreateInvestment() {
         .insert({
           user_id: userData.user.id,
           name: payload.name,
-          ticker_symbol: payload.ticker,
+          ticker_symbol: payload.ticker || null,
           asset_class: payload.type,
-          platform: payload.platform,
-          units: payload.units || null,
-          quantity: payload.units || null,
-          average_purchase_price: payload.avg_purchase_price || null,
-          invested_amount: payload.units && payload.avg_purchase_price ? new Decimal(payload.units).times(payload.avg_purchase_price).toNumber() : payload.current_value,
-          total_invested: payload.units && payload.avg_purchase_price ? new Decimal(payload.units).times(payload.avg_purchase_price).toNumber() : payload.current_value,
-          current_value: payload.current_value,
-          status: 'active',
+          platform: payload.platform || null,
         })
         .select()
         .single();

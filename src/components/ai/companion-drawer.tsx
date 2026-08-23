@@ -250,6 +250,15 @@ export function CompanionDrawer() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let rafId: number | null = null;
+
+      const flushRender = (content: string) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId ? { ...msg, content } : msg
+          )
+        );
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -258,12 +267,24 @@ export function CompanionDrawer() {
         const chunk = decoder.decode(value, { stream: true });
         fullContent += chunk;
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId ? { ...msg, content: fullContent } : msg
-          )
-        );
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+          if (rafId === null) {
+            rafId = window.requestAnimationFrame(() => {
+              flushRender(fullContent);
+              rafId = null;
+            });
+          }
+        } else {
+          flushRender(fullContent);
+        }
       }
+
+      // Final immediate flush on stream completion to ensure no trailing tokens are delayed
+      if (rafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      flushRender(fullContent);
 
       // Safeguard: Ensure stream produced meaningful content
       if (!fullContent || fullContent.trim().length === 0) {
