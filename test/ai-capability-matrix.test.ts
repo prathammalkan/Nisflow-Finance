@@ -23,7 +23,6 @@ interface MockDatabaseState {
   transaction_categories: any[];
   receivables: any[];
   payables: any[];
-  loan_payments: any[];
   transactions: any[];
 }
 
@@ -43,7 +42,6 @@ function createMockSupabase(initialState?: Partial<MockDatabaseState>) {
     transaction_categories: initialState?.transaction_categories || [],
     receivables: initialState?.receivables || [],
     payables: initialState?.payables || [],
-    loan_payments: initialState?.loan_payments || [],
     transactions: initialState?.transactions || [],
   };
 

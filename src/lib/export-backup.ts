@@ -25,7 +25,7 @@ export async function exportFullUserBackupJSON() {
       'investment_transactions',
       'budgets',
       'savings_goals',
-      'classification_rules',
+      'automation_rules',
       'tax_records',
       'documents',
       'monthly_closings',
@@ -97,7 +97,7 @@ export async function exportFullUserBackupSQL() {
       'investment_transactions',
       'budgets',
       'savings_goals',
-      'classification_rules',
+      'automation_rules',
       'tax_records'
     ];
 

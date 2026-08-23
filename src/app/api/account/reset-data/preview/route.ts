@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkResetDataRateLimit } from '@/lib/security/rate-limit';
 
 /**
  * GET /api/account/reset-data/preview
@@ -11,8 +12,9 @@ import { createClient } from '@/lib/supabase/server';
  * - Requires active authenticated session (auth.uid())
  * - Never mutates database or storage
  * - Tenant-isolated via server session
+ * - Rate-limited to prevent abuse
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -21,6 +23,24 @@ export async function GET() {
       return NextResponse.json(
         { error: 'Unauthorized. Authentication required to preview reset data.' },
         { status: 401 }
+      );
+    }
+
+    // Rate Limiting Check
+    const rateLimitResult = await checkResetDataRateLimit(user.id, req);
+    if (rateLimitResult.status === 'rate_limited') {
+      return NextResponse.json(
+        { error: `Too many reset preview requests. Please wait ${rateLimitResult.retryAfter}s before retrying.` },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateLimitResult.retryAfter) },
+        }
+      );
+    }
+    if (rateLimitResult.status === 'service_unavailable') {
+      return NextResponse.json(
+        { error: rateLimitResult.error },
+        { status: 503 }
       );
     }
 

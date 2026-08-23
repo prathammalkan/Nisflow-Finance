@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS public.recurring_transactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   account_id UUID REFERENCES public.accounts(id) ON DELETE SET NULL,
-  category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+  category_id UUID REFERENCES public.transaction_categories(id) ON DELETE SET NULL,
   counterparty_id UUID REFERENCES public.counterparties(id) ON DELETE SET NULL,
   description TEXT NOT NULL,
   amount DECIMAL(15,2) NOT NULL CHECK (amount > 0),
