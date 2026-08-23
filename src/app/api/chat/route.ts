@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       supabase.from('loans').select('id, name, loan_type, principal_amount, remaining_principal').eq('user_id', user.id).limit(20),
       supabase.from('investments').select('id, name, ticker_symbol, asset_class, platform').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
-      supabase.from('recurring_transactions').select('id, name, amount, type, next_date').eq('user_id', user.id).eq('is_active', true).limit(5),
+      supabase.from('recurring_transactions').select('id, description, amount, type, next_date, status').eq('user_id', user.id).limit(5),
     ]);
 
     const lastUserMsg = [...sanitizedMessages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() || '';

@@ -246,15 +246,15 @@ BEGIN
 
     INSERT INTO public.ledger_audit_log (
         user_id,
-        event_type,
         journal_entry_id,
+        action,
         actor_id,
         payload_hash,
         metadata
     ) VALUES (
         p_user_id,
-        'entry_posted',
         v_new_entry_id,
+        'POST',
         v_actor_id,
         v_payload_hash,
         jsonb_build_object(
@@ -374,17 +374,17 @@ BEGIN
     -- 6. Record audit log event for reversal
     INSERT INTO public.ledger_audit_log (
         user_id,
-        event_type,
         journal_entry_id,
+        action,
         actor_id,
         payload_hash,
         metadata
     ) VALUES (
         p_user_id,
-        'entry_reversed',
         v_reversal_entry_id,
+        'REVERSE',
         v_actor_id,
-        encode(digest(v_reversal_entry_id::text || '|' || p_original_entry_id::text, 'sha256'), 'hex'),
+        v_reversal_hash,
         jsonb_build_object(
             'original_entry_id', v_orig.id,
             'original_entry_number', v_orig.entry_number,
