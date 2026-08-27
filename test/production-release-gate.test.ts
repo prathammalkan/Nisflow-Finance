@@ -17,11 +17,11 @@ import {
 describe('PRODUCTION RELEASE GATE: VERIFICATION SUITE', () => {
 
   // ----------------------------------------------------------------------------
-  // SECTION 1: DATABASE RECONCILIATION & MIGRATION 017 VALIDATION
+  // SECTION 1: DATABASE RECONCILIATION & Migration 021 VALIDATION
   // ----------------------------------------------------------------------------
-  test('1. Migration 017 defines complete non-destructive schema reconciliation', () => {
-    const migrationPath = path.join(process.cwd(), 'supabase', 'migrations', '017_production_release_reconciliation.sql');
-    assert.ok(fs.existsSync(migrationPath), 'Migration 017 must exist');
+  test('1. Migration 021 defines complete non-destructive schema reconciliation', () => {
+    const migrationPath = path.join(process.cwd(), 'supabase', 'migrations', '021_production_release_reconciliation.sql');
+    assert.ok(fs.existsSync(migrationPath), 'Migration 021 must exist');
 
     const sqlContent = fs.readFileSync(migrationPath, 'utf8');
 
