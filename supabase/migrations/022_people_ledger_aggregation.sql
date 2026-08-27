@@ -1,5 +1,5 @@
 -- ==============================================================================
--- NISFLOW FINANCE — MIGRATION 018: PEOPLE LEDGER AGGREGATION RPC
+-- NISFLOW FINANCE — MIGRATION 022: PEOPLE LEDGER AGGREGATION RPC
 -- ==============================================================================
 --
 -- Replaces the application-level N+1 pattern in getPeopleAuthoritativeSummary
