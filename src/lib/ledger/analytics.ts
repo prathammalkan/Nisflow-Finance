@@ -78,7 +78,7 @@ export async function getAuthoritativeDashboardStats(
         status,
         user_id
       )
-    `).eq('user_id', userId).eq('journal_entries.status', 'posted')
+    `).eq('user_id', userId).in('journal_entries.status', ['posted', 'reversed'])
   ]);
 
   if (laErr) throw new Error(`Failed to query ledger accounts: ${laErr.message}`);
@@ -236,7 +236,7 @@ export async function getAuthoritativeMonthlyTrend(
       )
     `)
       .eq('user_id', userId)
-      .eq('journal_entries.status', 'posted')
+      .in('journal_entries.status', ['posted', 'reversed'])
       .gte('journal_entries.transaction_date', startDateIso.split('T')[0])
   ]);
 
@@ -290,7 +290,7 @@ export async function getAuthoritativeSpendingByCategory(
     { data: lines, error }
   ] = await Promise.all([
     (supabase.from('ledger_accounts') as any).select('*').eq('user_id', userId).eq('account_type', 'expense'),
-    (supabase.from('categories') as any).select('id, name'),
+    (supabase.from('transaction_categories') as any).select('id, name'),
     (supabase.from('journal_lines') as any).select(`
       id,
       ledger_account_id,
@@ -304,7 +304,7 @@ export async function getAuthoritativeSpendingByCategory(
       )
     `)
       .eq('user_id', userId)
-      .eq('journal_entries.status', 'posted')
+      .in('journal_entries.status', ['posted', 'reversed'])
       .gte('journal_entries.transaction_date', startDateStr)
       .lte('journal_entries.transaction_date', endDateStr)
   ]);
@@ -384,7 +384,7 @@ export async function getAuthoritativeDailySpending(
       )
     `)
       .eq('user_id', userId)
-      .eq('journal_entries.status', 'posted')
+      .in('journal_entries.status', ['posted', 'reversed'])
       .gte('journal_entries.transaction_date', startStr)
   ]);
 

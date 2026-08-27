@@ -293,7 +293,35 @@ function createMockSupabase(initialState: {
         if (original.status === 'reversed') return { data: null, error: { message: 'Already reversed' } };
 
         original.status = 'reversed';
-        return { data: `rev-${Date.now()}`, error: null };
+
+        const revEntryId = `rev-${Date.now()}`;
+        const revEntry = {
+          id: revEntryId,
+          user_id: p_user_id,
+          transaction_date: original.transaction_date,
+          description: `Reversal of ${original.description}`,
+          source_type: 'reversal',
+          idempotency_key: params.p_idempotency_key || `REV:${p_original_entry_id}`,
+          status: 'posted',
+          created_at: new Date().toISOString(),
+        };
+        store.journal_entries.push(revEntry);
+
+        const originalLines = store.journal_lines.filter(l => l.journal_entry_id === p_original_entry_id);
+        for (const ol of originalLines) {
+          store.journal_lines.push({
+            id: `jl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            journal_entry_id: revEntryId,
+            ledger_account_id: ol.ledger_account_id,
+            user_id: p_user_id,
+            debit_amount: ol.credit_amount,
+            credit_amount: ol.debit_amount,
+            memo: `Reversal line`,
+            created_at: new Date().toISOString(),
+          });
+        }
+
+        return { data: revEntryId, error: null };
       }
 
       return { data: null, error: { message: `Unknown RPC function ${fnName}` } };

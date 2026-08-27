@@ -172,7 +172,7 @@ export async function getLoanAuthoritativeBalance(
   loanId: string
 ): Promise<LoanAuthoritativeBalance> {
   const { data: loan } = await (supabase.from('loans') as any)
-    .select('id, user_id, name, principal_amount')
+    .select('id, user_id, name, principal_amount, loan_type')
     .eq('id', loanId)
     .maybeSingle();
 
@@ -180,6 +180,7 @@ export async function getLoanAuthoritativeBalance(
     throw new Error('Security Violation: Unauthorized access to loan balance of another user.');
   }
 
+  const isGiven = loan?.loan_type === 'given';
   const loanName = loan?.name || `Loan ${loanId}`;
   const { loanLedgerAccId, interestExpenseAccId } = await ensureLoanLedgerAccounts(
     supabase,
@@ -188,7 +189,7 @@ export async function getLoanAuthoritativeBalance(
     loanName
   );
 
-  // Fetch all posted and reversed lines for the loan liability and interest expense accounts
+  // Fetch all posted and reversed lines for the loan account and interest account
   const { data: lines, error: linesError } = await (supabase.from('journal_lines') as any)
     .select(`
       id,
@@ -217,46 +218,68 @@ export async function getLoanAuthoritativeBalance(
   let totalInterestDebits = new Decimal(0);
   let totalInterestCredits = new Decimal(0);
 
+  // Double-entry running balances
+  let loanDebitsTotal = new Decimal(0);
+  let loanCreditsTotal = new Decimal(0);
+
   for (const line of lines || []) {
     const entry = line.journal_entries;
     const sourceType = entry?.source_type;
+    const debit = new Decimal(line.debit_amount || 0);
+    const credit = new Decimal(line.credit_amount || 0);
 
     if (line.ledger_account_id === loanLedgerAccId) {
+      loanDebitsTotal = loanDebitsTotal.plus(debit);
+      loanCreditsTotal = loanCreditsTotal.plus(credit);
+
       if (sourceType === 'loan_disbursement') {
-        totalDisbursedCredits = totalDisbursedCredits.plus(new Decimal(line.credit_amount || 0));
-        totalDisbursedDebits = totalDisbursedDebits.plus(new Decimal(line.debit_amount || 0));
+        totalDisbursedCredits = totalDisbursedCredits.plus(credit);
+        totalDisbursedDebits = totalDisbursedDebits.plus(debit);
       } else if (sourceType === 'loan_emi') {
-        totalEmiDebits = totalEmiDebits.plus(new Decimal(line.debit_amount || 0));
-        totalEmiCredits = totalEmiCredits.plus(new Decimal(line.credit_amount || 0));
+        totalEmiDebits = totalEmiDebits.plus(debit);
+        totalEmiCredits = totalEmiCredits.plus(credit);
       } else if (sourceType === 'reversal') {
-        // In a reversal of disbursement, line has debit_amount > 0
-        // In a reversal of EMI, line has credit_amount > 0
-        if (Number(line.debit_amount) > 0) {
-          totalDisbursedDebits = totalDisbursedDebits.plus(new Decimal(line.debit_amount));
-        } else if (Number(line.credit_amount) > 0) {
-          totalEmiCredits = totalEmiCredits.plus(new Decimal(line.credit_amount));
-        }
-      } else {
-        if (Number(line.credit_amount) > 0) {
-          totalDisbursedCredits = totalDisbursedCredits.plus(new Decimal(line.credit_amount));
+        if (isGiven) {
+          if (credit.gt(0)) {
+            totalDisbursedCredits = totalDisbursedCredits.plus(credit);
+          } else if (debit.gt(0)) {
+            totalEmiDebits = totalEmiDebits.plus(debit);
+          }
         } else {
-          totalEmiDebits = totalEmiDebits.plus(new Decimal(line.debit_amount));
+          if (debit.gt(0)) {
+            totalDisbursedDebits = totalDisbursedDebits.plus(debit);
+          } else if (credit.gt(0)) {
+            totalEmiCredits = totalEmiCredits.plus(credit);
+          }
         }
       }
     } else if (line.ledger_account_id === interestExpenseAccId) {
-      totalInterestDebits = totalInterestDebits.plus(new Decimal(line.debit_amount || 0));
-      totalInterestCredits = totalInterestCredits.plus(new Decimal(line.credit_amount || 0));
+      totalInterestDebits = totalInterestDebits.plus(debit);
+      totalInterestCredits = totalInterestCredits.plus(credit);
     }
   }
 
-  // Net Disbursed = Disbursements - Disbursement Reversals
-  const netDisbursed = Decimal.max(0, totalDisbursedCredits.minus(totalDisbursedDebits));
-  // Net Principal Paid = EMI Principal Payments - EMI Reversals
-  const netPrincipalPaid = Decimal.max(0, totalEmiDebits.minus(totalEmiCredits));
-  // Outstanding Principal = Net Disbursed - Net Principal Paid
-  const outstandingPrincipal = Decimal.max(0, netDisbursed.minus(netPrincipalPaid));
-  // Total Interest Paid = EMI Interest - Interest Reversals
-  const totalInterestPaid = Decimal.max(0, totalInterestDebits.minus(totalInterestCredits));
+  let outstandingPrincipal: Decimal;
+  let netDisbursed: Decimal;
+  let netPrincipalPaid: Decimal;
+  let totalInterestPaid: Decimal;
+
+  if (isGiven) {
+    // Given loan (Asset account): Balance = Debits - Credits
+    outstandingPrincipal = Decimal.max(0, loanDebitsTotal.minus(loanCreditsTotal));
+    netDisbursed = Decimal.max(0, totalDisbursedDebits.minus(totalDisbursedCredits));
+    netPrincipalPaid = Decimal.max(0, totalEmiCredits.minus(totalEmiDebits));
+    // Interest received on Income account = Credits - Debits
+    totalInterestPaid = Decimal.max(0, totalInterestCredits.minus(totalInterestDebits));
+  } else {
+    // Taken loan (Liability account): Balance = Credits - Debits
+    outstandingPrincipal = Decimal.max(0, loanCreditsTotal.minus(loanDebitsTotal));
+    netDisbursed = Decimal.max(0, totalDisbursedCredits.minus(totalDisbursedDebits));
+    netPrincipalPaid = Decimal.max(0, totalEmiDebits.minus(totalEmiCredits));
+    // Interest paid on Expense account = Debits - Credits
+    totalInterestPaid = Decimal.max(0, totalInterestDebits.minus(totalInterestCredits));
+  }
+
   const isSettled = netDisbursed.gt(0) ? outstandingPrincipal.lte(0) : true;
 
   return {

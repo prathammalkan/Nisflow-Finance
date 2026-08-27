@@ -228,11 +228,67 @@ export async function getCounterpartyAuthoritativeBalance(
 
 /**
  * Derives authoritative People Ledger totals across all counterparties for a user.
+ * Uses a single SQL aggregation RPC (get_people_ledger_summary) to avoid N+1 queries.
+ * Falls back to concurrent per-person queries if the RPC is unavailable (migration not yet applied).
  */
 export async function getPeopleAuthoritativeSummary(
   supabase: SupabaseClient<Database>,
   userId: string
 ): Promise<PeopleAuthoritativeSummary> {
+  // --- Attempt fast single-query path via migration 018 RPC ---
+  const { data: rpcRows, error: rpcErr } = await (supabase.rpc as any)(
+    'get_people_ledger_summary',
+    { p_user_id: userId }
+  );
+
+  if (!rpcErr && Array.isArray(rpcRows)) {
+    const balances: Record<string, CounterpartyBalances> = {};
+    let totalReceivable = new Decimal(0);
+    let totalPayable = new Decimal(0);
+
+    for (const row of rpcRows as Array<{
+      counterparty_id: string;
+      counterparty_name: string;
+      receivable_balance: number | string;
+      payable_balance: number | string;
+    }>) {
+      const recBal = Decimal.max(0, new Decimal(row.receivable_balance ?? 0));
+      const payBal = Decimal.max(0, new Decimal(row.payable_balance ?? 0));
+      const netBal = recBal.minus(payBal);
+
+      let direction: 'THEY_OWE_YOU' | 'YOU_OWE_THEM' | 'SETTLED' = 'SETTLED';
+      if (netBal.gt(0)) direction = 'THEY_OWE_YOU';
+      else if (netBal.lt(0)) direction = 'YOU_OWE_THEM';
+
+      balances[row.counterparty_id] = {
+        counterpartyId: row.counterparty_id,
+        name: row.counterparty_name,
+        receivableBalance: recBal.toNumber(),
+        payableBalance: payBal.toNumber(),
+        netBalance: netBal.toNumber(),
+        direction,
+        totalLent: recBal.toNumber(),
+        totalReceived: 0,
+        totalBorrowed: 0,
+        totalRepaid: payBal.toNumber(),
+      };
+
+      totalReceivable = totalReceivable.plus(recBal);
+      totalPayable = totalPayable.plus(payBal);
+    }
+
+    return {
+      totalReceivable: totalReceivable.toNumber(),
+      totalPayable: totalPayable.toNumber(),
+      netPosition: totalReceivable.minus(totalPayable).toNumber(),
+      peopleCount: rpcRows.length,
+      balances,
+    };
+  }
+
+  // --- Fallback: concurrent per-person queries (migration 018 not yet applied) ---
+  console.warn('[PeopleLedger] get_people_ledger_summary RPC unavailable, falling back to N queries:', rpcErr?.message);
+
   const { data: counterparties, error: cpErr } = await (supabase.from('counterparties') as any)
     .select('id, name')
     .eq('user_id', userId);

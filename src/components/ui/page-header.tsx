@@ -5,12 +5,14 @@ interface PageHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string
   description?: string
   actions?: React.ReactNode
+  children?: React.ReactNode
 }
 
 export function PageHeader({
   title,
   description,
   actions,
+  children,
   className,
   ...props
 }: PageHeaderProps) {
@@ -28,9 +30,10 @@ export function PageHeader({
           <p className="text-muted-foreground">{description}</p>
         )}
       </div>
-      {actions && (
+      {(actions || children) && (
         <div className="flex items-center gap-2">
           {actions}
+          {children}
         </div>
       )}
     </div>

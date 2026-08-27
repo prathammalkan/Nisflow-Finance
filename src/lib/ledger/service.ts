@@ -543,6 +543,7 @@ export async function recordFinancialTransaction(
           direction,
           description: params.description,
           notes: params.notes ? `${params.notes} [Ledger: ${journalEntryId}]` : `[Ledger: ${journalEntryId}]`,
+          journal_entry_id: journalEntryId,
           date: txnDate,
           status: 'completed',
         })

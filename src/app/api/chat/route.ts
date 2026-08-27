@@ -1,4 +1,3 @@
-import { createGoogle } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import { createClient } from '@/lib/supabase/server';
 import Decimal from 'decimal.js';
@@ -8,8 +7,14 @@ import {
   getPersonLedgerHistory,
 } from '@/lib/ledger/people';
 import { getLoanAuthoritativeBalance } from '@/lib/ledger/loans';
+import {
+  getGoogleAIProvider,
+  getCanonicalAIModel,
+  normalizeAIProviderError,
+} from '@/lib/ai/config';
 
 export async function POST(req: Request) {
+  const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -81,10 +86,10 @@ export async function POST(req: Request) {
       { data: recentTransactions },
       { data: recurringList },
     ] = await Promise.all([
-      supabase.from('accounts').select('id, name, type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
+      supabase.from('accounts').select('id, name, account_type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
       supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
       supabase.from('loans').select('id, name, loan_type, principal_amount, remaining_principal').eq('user_id', user.id).limit(20),
-      supabase.from('investments').select('id, name, ticker_symbol, asset_class, platform').eq('user_id', user.id).limit(20),
+      supabase.from('investments').select('id, name, symbol, asset_type, total_invested, current_value').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
       supabase.from('recurring_transactions').select('id, description, amount, type, next_date, status').eq('user_id', user.id).limit(5),
     ]);
@@ -146,9 +151,9 @@ LOAN LEDGER CONTEXT:
     }
 
     // 3. Least-Privilege Investment Scoping (Canonical schema)
-    const investmentList: Array<{ id: string; name: string; ticker_symbol?: string | null; asset_class?: string | null; platform?: string | null }> = (investments as any) || [];
+    const investmentList: Array<{ id: string; name: string; symbol?: string | null; asset_type?: string | null; total_invested?: number; current_value?: number }> = (investments as any) || [];
     const matchedInvestment = investmentList.find((h) =>
-      (h.ticker_symbol && lastUserMsg.includes(h.ticker_symbol.toLowerCase())) ||
+      (h.symbol && lastUserMsg.includes(h.symbol.toLowerCase())) ||
       (h.name && lastUserMsg.includes(h.name.toLowerCase()))
     );
 
@@ -156,28 +161,29 @@ LOAN LEDGER CONTEXT:
     if (matchedInvestment) {
       investmentSpecificContext = `
 INVESTMENT HOLDING CONTEXT:
-- Asset: ${matchedInvestment.ticker_symbol ? `${matchedInvestment.ticker_symbol} (${matchedInvestment.name})` : matchedInvestment.name}
-- Asset Class: ${matchedInvestment.asset_class || 'Investment'} | Platform: ${matchedInvestment.platform || 'Direct'}
+- Asset: ${matchedInvestment.symbol ? `${matchedInvestment.symbol} (${matchedInvestment.name})` : matchedInvestment.name}
+- Asset Class: ${matchedInvestment.asset_type || 'Investment'} | Value: ₹${Number(matchedInvestment.current_value ?? matchedInvestment.total_invested ?? 0).toFixed(2)}
 `;
     }
 
     // Compute Total Cash, Investments, and Net Worth from Accounts
     let totalCash = new Decimal(0);
     let totalInvestments = new Decimal(0);
-    const accRows: Array<{ id: string; name: string; type?: string; balance?: number; current_balance?: number }> = (accounts as any) || [];
+    const accRows: Array<{ id: string; name: string; account_type?: string; type?: string; balance?: number; current_balance?: number }> = (accounts as any) || [];
     const accountsListFormatted: string[] = [];
 
     for (const acc of accRows) {
       const authBal = new Decimal(acc.current_balance ?? acc.balance ?? 0);
+      const accType = acc.account_type || acc.type || 'bank';
 
-      if (acc.type === 'investment') {
+      if (accType === 'investment') {
         totalInvestments = totalInvestments.plus(authBal);
       } else {
         totalCash = totalCash.plus(authBal);
       }
 
       // SEC-02: Do NOT expose internal database UUIDs to the AI model
-      accountsListFormatted.push(`- ${acc.name} (Type: ${acc.type}, Balance: ₹${authBal.toFixed(2)})`);
+      accountsListFormatted.push(`- ${acc.name} (Type: ${accType}, Balance: ₹${authBal.toFixed(2)})`);
     }
 
     const netWorth = totalCash.plus(totalInvestments);
@@ -256,33 +262,10 @@ When preparing an action, output a 1-2 sentence conversational summary, followed
 }
 [/ACTION]`;
 
-    const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
     console.log(`[AI_REQUEST] requestId=${requestId} userId=${user.id.substring(0, 8)}...`);
 
-    const apiKey =
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY;
-
-    if (!apiKey) {
-      console.error(`[AI_PROVIDER_ERROR] requestId=${requestId} code=missing_api_key`);
-      return new Response(
-        JSON.stringify({
-          error: 'AI service is temporarily unconfigured. Please ensure GOOGLE_GENERATIVE_AI_API_KEY is configured in deployment environment.',
-          requestId,
-        }),
-        {
-          status: 503,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Request-Id': requestId,
-          },
-        }
-      );
-    }
-
-    const googleProvider = createGoogle({ apiKey });
-    const selectedModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+    const googleProvider = getGoogleAIProvider();
+    const selectedModel = getCanonicalAIModel();
 
     console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
 
@@ -313,17 +296,18 @@ When preparing an action, output a 1-2 sentence conversational summary, followed
     });
   } catch (error: any) {
     const errorReqId = `err-${Date.now().toString(36)}`;
-    console.error(`[AI_UNHANDLED_ERROR] requestId=${errorReqId}:`, error);
+    const normalized = normalizeAIProviderError(error, errorReqId);
     return new Response(
       JSON.stringify({
-        error: error?.message || 'NisFlow AI is temporarily unavailable. Try again.',
+        error: normalized.error,
         requestId: errorReqId,
       }),
       {
-        status: 500,
+        status: normalized.statusCode,
         headers: {
           'Content-Type': 'application/json',
           'X-Request-Id': errorReqId,
+          ...(normalized.statusCode === 429 ? { 'Retry-After': '30' } : {}),
         },
       }
     );

@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
-import { createGoogle } from '@ai-sdk/google';
 import { z } from 'zod';
 
 import { checkCategorizeRateLimit } from '@/lib/security/rate-limit';
+import {
+  getGoogleAIProvider,
+  getCanonicalAIModel,
+  normalizeAIProviderError,
+} from '@/lib/ai/config';
 
 export async function POST(req: Request) {
   try {
@@ -35,20 +39,6 @@ export async function POST(req: Request) {
       );
     }
 
-    const apiKey =
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'AI service is temporarily unconfigured. Missing API key.' },
-        { status: 503 }
-      );
-    }
-
-    const google = createGoogle({ apiKey });
-
     const body = await req.json();
     const { description } = body;
 
@@ -74,9 +64,12 @@ export async function POST(req: Request) {
       .map((c) => `- ID: ${c.id} | Name: ${c.name} | Type: ${c.type}`)
       .join('\n');
 
+    const google = getGoogleAIProvider();
+    const model = getCanonicalAIModel();
+
     // Use Gemini to categorize
     const { object } = await generateObject({
-      model: google(process.env.GEMINI_MODEL || 'gemini-3.6-flash'),
+      model: google(model),
       schema: z.object({
         categoryId: z.string().uuid().describe('The ID of the best matching category'),
         confidence: z.number().min(0).max(1).describe('Confidence score from 0 to 1'),
@@ -100,7 +93,14 @@ Return ONLY the category ID and a confidence score.`,
       confidence: object.confidence,
     });
   } catch (error) {
-    console.error('Categorize API Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    const normalized = normalizeAIProviderError(error);
+    return NextResponse.json(
+      { error: normalized.error },
+      {
+        status: normalized.statusCode,
+        headers: normalized.statusCode === 429 ? { 'Retry-After': '30' } : undefined,
+      }
+    );
   }
 }
+

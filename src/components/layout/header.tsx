@@ -12,6 +12,15 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/lib/hooks/use-profile";
 import { toast } from "sonner";
 
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+
 interface HeaderProps {
   collapsed: boolean;
   setIsMobileOpen: (open: boolean) => void;
@@ -21,7 +30,6 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const { data: profile } = useProfile();
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   const initials = (profile?.displayName || 'U')
@@ -43,7 +51,6 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
       toast.error("Failed to sign out");
     } finally {
       setSigningOut(false);
-      setUserMenuOpen(false);
     }
   };
 
@@ -86,50 +93,43 @@ export function Header({ collapsed, setIsMobileOpen }: HeaderProps) {
         {/* Notifications */}
         <NotificationPanel />
 
-        {/* User avatar + dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors"
-            aria-label="User menu"
-            title={profile?.displayName || 'User menu'}
-          >
-            {initials}
-          </button>
-
-          {userMenuOpen && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setUserMenuOpen(false)}
-              />
-              {/* Dropdown */}
-              <div className="absolute right-0 top-10 z-20 w-48 rounded-lg border bg-popover shadow-lg py-1 text-sm">
-                <div className="px-3 py-2 border-b">
-                  <p className="font-medium text-foreground truncate">{profile?.displayName || 'User'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{profile?.email || ''}</p>
-                </div>
-                <Link
-                  href="/settings"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 hover:bg-muted transition-colors text-foreground"
-                >
-                  <Settings className="h-4 w-4" />
-                  Settings
-                </Link>
-                <button
-                  onClick={handleSignOut}
-                  disabled={signingOut}
-                  className="flex items-center gap-2 px-3 py-2 hover:bg-muted transition-colors text-destructive w-full text-left disabled:opacity-50"
-                >
-                  <LogOut className="h-4 w-4" />
-                  {signingOut ? "Signing out..." : "Sign out"}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        {/* User avatar + accessible dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="User menu"
+              title={profile?.displayName || 'User menu'}
+            >
+              {initials}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>
+              <p className="font-medium text-foreground truncate">{profile?.displayName || 'User'}</p>
+              <p className="text-xs text-muted-foreground truncate font-normal">{profile?.email || ''}</p>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link
+                href="/settings"
+                className="flex items-center gap-2 cursor-pointer w-full text-foreground"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Settings</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleSignOut}
+              className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+              disabled={signingOut}
+            >
+              <LogOut className="h-4 w-4" />
+              <span>{signingOut ? "Signing out..." : "Sign out"}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

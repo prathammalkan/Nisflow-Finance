@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { formatINR } from '@/lib/finance/money';
 import { Decimal } from 'decimal.js';
+import { getAccountAuthoritativeDecimalBalance } from '@/lib/finance/balance';
 
 export default function AccountsPage() {
   const [showInactive, setShowInactive] = useState(false);

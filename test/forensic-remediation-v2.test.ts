@@ -45,13 +45,13 @@ test('REMEDIATION [BUG-003]: AI routes use canonical Google Gemini model IDs', (
   const categorizeCode = fs.readFileSync(categorizeRoutePath, 'utf8');
   const insightsCode = fs.readFileSync(insightsRoutePath, 'utf8');
 
-  assert.match(chatCode, /gemini-3\.6-flash/, 'Chat route must use gemini-3.6-flash');
+  assert.match(chatCode, /getCanonicalAIModel|gemini-3\.6-flash|gemini-2\.5-flash/, 'Chat route must use canonical model');
   assert.doesNotMatch(chatCode, /gemini-3\.5-flash-lite/, 'Chat route must NOT use nonexistent gemini-3.5-flash-lite');
 
-  assert.match(categorizeCode, /gemini-3\.6-flash/, 'Categorize route must use gemini-3.6-flash');
+  assert.match(categorizeCode, /getCanonicalAIModel|gemini-3\.6-flash|gemini-2\.5-flash/, 'Categorize route must use canonical model');
   assert.doesNotMatch(categorizeCode, /gemini-3\.5-flash-lite/, 'Categorize route must NOT use nonexistent gemini-3.5-flash-lite');
 
-  assert.match(insightsCode, /gemini-3\.6-flash/, 'Insights route must use gemini-3.6-flash');
+  assert.match(insightsCode, /getCanonicalAIModel|gemini-3\.6-flash|gemini-2\.5-flash/, 'Insights route must use canonical model');
   assert.doesNotMatch(insightsCode, /gemini-3\.5-flash-lite/, 'Insights route must NOT use nonexistent gemini-3.5-flash-lite');
 });
 

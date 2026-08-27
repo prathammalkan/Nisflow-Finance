@@ -143,13 +143,16 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="hidden md:flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar-nav"
           >
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto py-4 scrollbar-thin">
-          <nav className="space-y-6 px-2">
+          <nav id="sidebar-nav" className="space-y-6 px-2">
             {navigation.map((group, i) => (
               <div key={i} className="flex flex-col gap-1">
                 {!collapsed && (
@@ -199,8 +202,9 @@ export function Sidebar({ collapsed, setCollapsed, isMobileOpen, setIsMobileOpen
                 onClick={handleLogout}
                 className="text-muted-foreground hover:text-destructive transition-colors"
                 title="Sign out"
+                aria-label="Sign out"
               >
-                <LogOut size={16} />
+                <LogOut size={16} aria-hidden="true" />
               </button>
             )}
           </div>

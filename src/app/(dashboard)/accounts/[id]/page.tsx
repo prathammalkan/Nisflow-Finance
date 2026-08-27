@@ -18,6 +18,7 @@ import { generatePrintablePDFStatement } from '@/lib/export-statement';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { Decimal } from 'decimal.js';
+import { getAccountAuthoritativeBalance } from '@/lib/finance/balance';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -79,6 +80,7 @@ export default function AccountDetailPage() {
           </div>
           <div className="flex space-x-2">
             <Button variant="outline" size="sm" onClick={() => {
+              const authBal = getAccountAuthoritativeBalance(account);
               generatePrintablePDFStatement({
                 title: `Account Statement: ${account.name}`,
                 subtitle: `Institution: ${account.institution || 'N/A'} | Type: ${account.type || 'Account'}`,
@@ -89,14 +91,14 @@ export default function AccountDetailPage() {
                     date: new Date().toISOString().split('T')[0],
                     description: 'Current Account Balance',
                     type: 'Balance',
-                    inflow: Number(account.current_balance) > 0 ? Number(account.current_balance) : 0,
-                    outflow: Number(account.current_balance) < 0 ? Math.abs(Number(account.current_balance)) : 0,
-                    balance: Number(account.current_balance),
+                    inflow: authBal > 0 ? authBal : 0,
+                    outflow: authBal < 0 ? Math.abs(authBal) : 0,
+                    balance: authBal,
                   }
                 ],
                 totalIn: stats ? stats.inflow : 0,
                 totalOut: stats ? stats.outflow : 0,
-                closingBalance: Number(account.current_balance),
+                closingBalance: authBal,
               });
             }}>
               Print PDF Statement
@@ -121,8 +123,8 @@ export default function AccountDetailPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Current Balance</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={cn("text-3xl font-bold", Number(account.current_balance) < 0 ? "text-destructive" : "")}>
-              {formatINR(Number(account.current_balance))}
+            <div className={cn("text-3xl font-bold", getAccountAuthoritativeBalance(account) < 0 ? "text-destructive" : "")}>
+              {formatINR(getAccountAuthoritativeBalance(account))}
             </div>
           </CardContent>
         </Card>

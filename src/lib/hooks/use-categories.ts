@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/types/database';
 
-type Category = Database['public']['Tables']['categories']['Row'];
+// The canonical category table is `transaction_categories`.
+// The legacy `categories` table does not exist in any migration and must not be queried.
+type Category = Database['public']['Tables']['transaction_categories']['Row'];
 
 export function useCategories() {
   const supabase = createClient();
@@ -11,7 +13,7 @@ export function useCategories() {
     queryKey: ['categories'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('categories')
+        .from('transaction_categories')
         .select('*')
         .order('name', { ascending: true });
 
@@ -28,7 +30,7 @@ export function useCategoriesByType(type: 'income' | 'expense' | 'both') {
     queryKey: ['categories', type],
     queryFn: async () => {
       let query = supabase
-        .from('categories')
+        .from('transaction_categories')
         .select('*')
         .order('name', { ascending: true });
 

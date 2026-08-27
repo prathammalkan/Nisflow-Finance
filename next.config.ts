@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// Extract dynamic Supabase host if configured
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://qyjhicibrciqcznsdevk.supabase.co';
+let supabaseHost = 'qyjhicibrciqcznsdevk.supabase.co';
+try {
+  supabaseHost = new URL(supabaseUrl).host;
+} catch {
+  // Use default
+}
+
 const securityHeaders = [
   {
     key: 'X-DNS-Prefetch-Control',
@@ -41,8 +50,8 @@ const securityHeaders = [
         : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob: https://qyjhicibrciqcznsdevk.supabase.co",
-      "connect-src 'self' https://qyjhicibrciqcznsdevk.supabase.co wss://qyjhicibrciqcznsdevk.supabase.co https://generativelanguage.googleapis.com",
+      `img-src 'self' data: blob: https://${supabaseHost}`,
+      `connect-src 'self' https://${supabaseHost} wss://${supabaseHost} https://generativelanguage.googleapis.com`,
       "frame-ancestors 'none'",
       "object-src 'none'",
       "base-uri 'self'",
@@ -74,3 +83,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+

@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ArrowDownIcon, ArrowUpIcon, Building2Icon, CreditCardIcon, LandmarkIcon, WalletIcon } from 'lucide-react';
 import { useAccountStats } from '@/lib/hooks/use-accounts';
+import { getAccountAuthoritativeBalance } from '@/lib/finance/balance';
 import type { Database } from '@/types/database';
 
 type Account = Database['public']['Tables']['accounts']['Row'];
@@ -25,6 +26,7 @@ interface AccountCardProps {
 export function AccountCard({ account, className }: AccountCardProps) {
   const { data: stats } = useAccountStats(account.id);
   const acct = account as any;
+  const balance = getAccountAuthoritativeBalance(account);
 
   const getIcon = (type: string) => {
     switch (type?.toLowerCase()) {
@@ -81,9 +83,9 @@ export function AccountCard({ account, className }: AccountCardProps) {
             <p className="text-sm text-muted-foreground mb-1">Current Balance</p>
             <p className={cn(
               "text-2xl font-bold tracking-tight",
-              Number(acct.current_balance) < 0 ? "text-destructive" : "text-foreground"
+              balance < 0 ? "text-destructive" : "text-foreground"
             )}>
-              {formatINR(Number(acct.current_balance || 0))}
+              {formatINR(balance)}
             </p>
           </div>
 
