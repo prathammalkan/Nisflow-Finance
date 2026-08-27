@@ -310,7 +310,7 @@ describe('CATEGORY SCHEMA', () => {
 // ---------------------------------------------------------------------------
 describe('PEOPLE LEDGER AGGREGATION', () => {
   const people = readSrc('lib', 'ledger', 'people.ts');
-  const migration = readMigration('018_people_ledger_aggregation.sql');
+  const migration = readMigration('022_people_ledger_aggregation.sql');
 
   test('PL-001: getPeopleAuthoritativeSummary attempts RPC get_people_ledger_summary', () => {
     assert.ok(
@@ -326,35 +326,35 @@ describe('PEOPLE LEDGER AGGREGATION', () => {
     );
   });
 
-  test('PL-003: Migration 018 defines get_people_ledger_summary function', () => {
+  test('PL-003: Migration 022 defines get_people_ledger_summary function', () => {
     assert.ok(
       migration.includes('CREATE OR REPLACE FUNCTION public.get_people_ledger_summary'),
-      'Migration 018 must create the get_people_ledger_summary RPC'
+      'Migration 022 must create the get_people_ledger_summary RPC'
     );
   });
 
-  test('PL-004: Migration 018 rejects anonymous callers', () => {
+  test('PL-004: Migration 022 rejects anonymous callers', () => {
     assert.ok(
       migration.includes("'anon'"),
-      'Migration 018 RPC must reject anonymous callers'
+      'Migration 022 RPC must reject anonymous callers'
     );
   });
 
-  test('PL-005: Migration 018 enforces tenant isolation (auth.uid check)', () => {
+  test('PL-005: Migration 022 enforces tenant isolation (auth.uid check)', () => {
     assert.ok(
       migration.includes('auth.uid()') && migration.includes('p_user_id'),
-      'Migration 018 RPC must validate auth.uid() === p_user_id'
+      'Migration 022 RPC must validate auth.uid() === p_user_id'
     );
   });
 
-  test('PL-006: Migration 018 uses single JOIN query (not N loops)', () => {
+  test('PL-006: Migration 022 uses single JOIN query (not N loops)', () => {
     assert.ok(
       migration.includes('LEFT JOIN public.journal_lines'),
-      'Migration 018 must use a single JOIN rather than procedural loops'
+      'Migration 022 must use a single JOIN rather than procedural loops'
     );
   });
 
-  test('PL-007: Migration 018 grants execute to authenticated only', () => {
+  test('PL-007: Migration 022 grants execute to authenticated only', () => {
     assert.ok(
       migration.includes('GRANT EXECUTE ON FUNCTION public.get_people_ledger_summary') &&
       migration.includes('TO authenticated'),
@@ -366,7 +366,7 @@ describe('PEOPLE LEDGER AGGREGATION', () => {
     );
   });
 
-  test('PL-008: Migration 018 uses SECURITY DEFINER', () => {
+  test('PL-008: Migration 022 uses SECURITY DEFINER', () => {
     assert.ok(
       migration.includes('SECURITY DEFINER'),
       'RPC must be SECURITY DEFINER to run with elevated privileges securely'
