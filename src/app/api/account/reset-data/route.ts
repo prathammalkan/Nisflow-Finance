@@ -129,7 +129,9 @@ export async function POST(req: Request) {
     }
 
     const durationMs = Date.now() - startTime;
-    console.log('[DATA_RESET_COMPLETED]', { resetId, durationMs, totalDbDeleted, storageDeletedCount });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[DATA_RESET_COMPLETED]', { resetId, durationMs, totalDbDeleted, storageDeletedCount });
+    }
 
     return NextResponse.json({
       success: true,

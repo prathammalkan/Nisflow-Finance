@@ -29,7 +29,7 @@ export function useWebNotifications() {
       if (res === "granted") {
         try {
           const subscription = await subscribeUserToPush();
-          console.log("Push subscription successful");
+          // Push subscription registered
           
           // Store the subscription in the database
           const supabase = createClient();

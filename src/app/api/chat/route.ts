@@ -262,12 +262,16 @@ When preparing an action, output a 1-2 sentence conversational summary, followed
 }
 [/ACTION]`;
 
-    console.log(`[AI_REQUEST] requestId=${requestId} userId=${user.id.substring(0, 8)}...`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[AI_REQUEST] requestId=${requestId} userId=${user.id.substring(0, 8)}...`);
+    }
 
     const googleProvider = getGoogleAIProvider();
     const selectedModel = getCanonicalAIModel();
 
-    console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[AI_PROVIDER_START] requestId=${requestId} model=${selectedModel}`);
+    }
 
     const result = streamText({
       model: googleProvider(selectedModel),
@@ -279,12 +283,16 @@ When preparing an action, output a 1-2 sentence conversational summary, followed
         console.error(`[AI_STREAM_ERROR] requestId=${requestId} error=`, error);
       },
       onFinish: () => {
-        console.log(`[AI_COMPLETE] requestId=${requestId} duration=${Math.round(performance.now() - tContextStart)}ms`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[AI_COMPLETE] requestId=${requestId} duration=${Math.round(performance.now() - tContextStart)}ms`);
+        }
       },
     });
 
     const contextDuration = Math.round(performance.now() - tContextStart);
-    console.log(`[AI_CONTEXT] requestId=${requestId} duration=${contextDuration}ms`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[AI_CONTEXT] requestId=${requestId} duration=${contextDuration}ms`);
+    }
 
     return result.toTextStreamResponse({
       headers: {

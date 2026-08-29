@@ -86,7 +86,7 @@ test('8. Key Validation: Service-role key is strictly detected and rejected', ()
 
   const validation = validateAnonKey(serviceKey);
   assert.equal(validation.isValidAnon, false);
-  assert.match(validation.error || '', /SUPABASE_SERVICE_ROLE_KEY was provided/);
+  assert.match(validation.error || '', /SUPABASE_SECRET_KEY was provided/);
 
   const payloadAnon = Buffer.from(JSON.stringify({ role: 'anon', sub: 'guest' })).toString('base64');
   const anonKey = `${header}.${payloadAnon}.fake_signature`;

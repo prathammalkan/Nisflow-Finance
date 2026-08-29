@@ -252,7 +252,8 @@ export function useDeleteTransaction() {
         .from('transactions')
         // @ts-ignore
         .update({ is_deleted: true, status: 'cancelled' } as any) // Soft delete & cancel
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', userData.user.id);
       
       if (error) throw error;
       return id;

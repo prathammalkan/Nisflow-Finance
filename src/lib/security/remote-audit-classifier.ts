@@ -71,7 +71,7 @@ export function validateAnonKey(key: string): { isValidAnon: boolean; error?: st
       if (payload.role === 'service_role') {
         return {
           isValidAnon: false,
-          error: 'CRITICAL SECURITY FAILURE: SUPABASE_SERVICE_ROLE_KEY was provided. Security audit must exclusively test the public anon boundary.',
+          error: 'CRITICAL SECURITY FAILURE: SUPABASE_SECRET_KEY was provided. Security audit must exclusively test the public anon boundary.',
         };
       }
       if (payload.role === 'anon') {
