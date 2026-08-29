@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isLocked, authenticateBiometrics]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-dvh flex-col bg-background">
       <BiometricLockModal
         isOpen={isLocked}
         onAuthenticate={authenticateBiometrics}

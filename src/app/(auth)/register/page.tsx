@@ -17,6 +17,20 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const mapAuthError = (message: string): string => {
+    const lower = message.toLowerCase();
+    if (lower.includes('already registered') || lower.includes('user already exists')) {
+      return 'An account with this email already exists. Try signing in instead.';
+    }
+    if (lower.includes('password') && lower.includes('weak')) {
+      return 'Password is too weak. Please choose a stronger password with at least 8 characters.';
+    }
+    if (lower.includes('network') || lower.includes('fetch')) {
+      return 'Connection issue. Please check your internet connection and try again.';
+    }
+    return message;
+  };
+
   const validate = () => {
     if (!email) return "Email is required";
     if (password.length < 8) return "Password must be at least 8 characters";
@@ -47,7 +61,7 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        setError(error.message);
+        setError(mapAuthError(error.message));
         return;
       }
 

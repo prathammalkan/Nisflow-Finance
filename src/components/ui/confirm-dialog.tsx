@@ -72,6 +72,7 @@ export function ConfirmDialog({
             onClick={handleConfirm}
             disabled={isLoading}
             className="gap-2"
+            autoFocus
           >
             {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
             {confirmLabel}

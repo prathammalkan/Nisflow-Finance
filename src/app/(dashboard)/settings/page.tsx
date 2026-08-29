@@ -128,7 +128,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="text-xl font-semibold">User Profile & Account</h2>
-            <p className="text-sm text-muted-foreground">Synchronized with Supabase Auth and User Database.</p>
+            <p className="text-sm text-muted-foreground">Manage your display name and account details.</p>
           </div>
         </div>
 
@@ -141,7 +141,7 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium leading-none">Email Address</label>
               <Input value={profile?.email || ""} disabled className="bg-muted text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">Managed by Supabase Authentication</p>
+              <p className="text-xs text-muted-foreground">Your email address cannot be changed here. Contact support if needed.</p>
             </div>
 
             <div className="space-y-2">

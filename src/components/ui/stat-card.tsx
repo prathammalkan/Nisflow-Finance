@@ -31,7 +31,7 @@ export function StatCard({
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold font-tabular-nums">{value}</div>
         {change !== undefined && (
           <p className="mt-1 flex items-center text-xs text-muted-foreground">
             <span

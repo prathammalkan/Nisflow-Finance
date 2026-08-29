@@ -445,16 +445,21 @@ export function CompanionDrawer() {
           </SheetHeader>
 
           {/* Chat message thread */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-4"
+            aria-live="polite"
+            aria-atomic="false"
+            aria-label="Conversation with AI assistant"
+          >
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-4 text-muted-foreground">
                 <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                   <Bot className="h-6 w-6" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-semibold text-foreground text-sm">How can I help with your finances today?</h3>
+                  <h3 className="font-semibold text-foreground text-sm">Your AI Finance Assistant</h3>
                   <p className="text-xs text-muted-foreground">
-                    Ask about your balances, create accounts, record transactions, loans, investments, or debts.
+                    Ask questions about your finances, record transactions, manage accounts, or get insights — all in plain language.
                   </p>
                 </div>
                 <div className="w-full space-y-2 max-w-sm">

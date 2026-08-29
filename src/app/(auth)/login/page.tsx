@@ -15,6 +15,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const mapAuthError = (message: string): string => {
+    const lower = message.toLowerCase();
+    if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+      return 'Incorrect email or password. Please check your details and try again.';
+    }
+    if (lower.includes('email not confirmed')) {
+      return 'Please verify your email address before signing in. Check your inbox for the confirmation link.';
+    }
+    if (lower.includes('too many requests') || lower.includes('rate limit')) {
+      return 'Too many sign-in attempts. Please wait a few minutes and try again.';
+    }
+    if (lower.includes('network') || lower.includes('fetch')) {
+      return 'Connection issue. Please check your internet connection and try again.';
+    }
+    return message;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -25,7 +42,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        setError(error.message);
+        setError(mapAuthError(error.message));
         return;
       }
 

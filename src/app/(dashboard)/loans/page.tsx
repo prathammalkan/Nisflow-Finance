@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, CreditCard, CheckCircle2, History, Loader2, Calendar } from "lucide-react";
+import { Plus, CreditCard, CheckCircle2, History, Loader2, Calendar, Landmark } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -77,13 +79,36 @@ export default function LoansPage() {
       {/* Loans Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {isLoading && (
-          <div className="col-span-full flex justify-center py-12 text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading loans from ledger...
-          </div>
+          <>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="rounded-lg border bg-card shadow overflow-hidden">
+                <div className="h-1.5 w-full bg-muted" />
+                <div className="p-6 space-y-4">
+                  <div className="flex justify-between">
+                    <Skeleton className="h-6 w-32" />
+                    <Skeleton className="h-5 w-16" />
+                  </div>
+                  <Skeleton className="h-4 w-48" />
+                  <div className="flex justify-between">
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-24" />
+                  </div>
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
+              </div>
+            ))}
+          </>
         )}
         {!isLoading && loans?.length === 0 && (
-          <div className="col-span-full text-center py-12 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-            No loans found. Click &quot;Add Loan&quot; to start tracking debt and EMIs.
+          <div className="col-span-full">
+            <EmptyState
+              icon={Landmark}
+              title="No loans tracked yet"
+              description="Add your home loan, car loan, or personal loan to track EMIs, outstanding principal, and interest paid."
+              actionLabel="Add Your First Loan"
+              onAction={() => setIsAddDialogOpen(true)}
+            />
           </div>
         )}
         {loans?.map((loan: any) => {

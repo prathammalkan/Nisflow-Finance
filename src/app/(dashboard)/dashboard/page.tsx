@@ -17,12 +17,14 @@ import { NetWorthChart } from '@/components/dashboard/net-worth-chart';
 import { AiInsightCard } from '@/components/dashboard/ai-insight-card';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { useProfile } from '@/lib/hooks/use-profile';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: trend, isLoading: trendLoading } = useMonthlyTrend(6);
+  const { data: profile } = useProfile();
   const now = new Date();
   const { data: categories, isLoading: categoriesLoading } = useSpendingByCategory(now.getMonth() + 1, now.getFullYear());
   const { data: recent, isLoading: recentLoading } = useRecentTransactions(10);
@@ -83,6 +85,14 @@ export default function DashboardPage() {
     return 'Good evening';
   };
 
+  const greetingSubtitle = () => {
+    if (statsLoading) return null;
+    if (stats && (stats.totalAccounts || 0) > 0) {
+      return "Here's your financial overview.";
+    }
+    return "Welcome to NisFlow. Let's set up your finances.";
+  };
+
   // Show onboarding to any user who hasn't completed it (cross-device, per account)
   const needsOnboarding = !statsLoading && !onboardingDismissed;
 
@@ -93,8 +103,12 @@ export default function DashboardPage() {
       )}
       <div className={cn("flex-1 space-y-4", needsOnboarding && "blur-sm pointer-events-none select-none")}>
         <div className="flex flex-col gap-0.5">
-          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-sm text-muted-foreground">{greeting()}</p>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {greeting()}{profile?.displayName ? `, ${profile.displayName.split(' ')[0]}` : ''}.
+          </h2>
+          {greetingSubtitle() && (
+            <p className="text-sm text-muted-foreground">{greetingSubtitle()}</p>
+          )}
         </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
@@ -174,7 +188,10 @@ export default function DashboardPage() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">No data available</div>
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center px-6">
+                <p className="text-sm font-medium text-foreground">No trend data yet</p>
+                <p className="text-xs text-muted-foreground max-w-[200px]">Add your first transactions to see income and expense trends here.</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -206,7 +223,10 @@ export default function DashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">No data available</div>
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center px-6">
+                <p className="text-sm font-medium text-foreground">No spending data yet</p>
+                <p className="text-xs text-muted-foreground max-w-[200px]">Record expense transactions to see your spending breakdown by category.</p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -289,7 +309,11 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="text-center text-sm text-muted-foreground py-4">No recent transactions</div>
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No transactions yet</p>
+              <p className="text-xs text-muted-foreground">Record your first income or expense to start building your financial history.</p>
+              <Link href="/transactions" className="text-xs text-primary hover:underline mt-1">Add transaction →</Link>
+            </div>
           )}
           {recent && recent.length > 0 && (
             <div className="pt-2 text-center">
@@ -306,10 +330,10 @@ export default function DashboardPage() {
           ) : (
             <AlertCircle className="h-4 w-4 text-amber-500" />
           )}
-          <span>Reconciliation Status</span>
+          <span className="font-medium">Account balances</span>
         </div>
-        <div className="text-muted-foreground">
-          {statsLoading ? <Skeleton className="h-4 w-16" /> : `${stats?.reconciledCount || 0} of ${stats?.totalAccounts || 0} accounts reconciled`}
+        <div className="text-muted-foreground text-xs">
+          {statsLoading ? <Skeleton className="h-4 w-16" /> : `${stats?.reconciledCount || 0} of ${stats?.totalAccounts || 0} accounts verified`}
         </div>
       </div>
     </div>
