@@ -79,7 +79,7 @@ test('Service Worker rule: verifies all API endpoints and Supabase requests bypa
     'https://nisflow.finance/api/ai/insights',
     'https://nisflow.finance/api/ai/categorize',
     'https://nisflow.finance/api/recurring/execute',
-    'https://qyjhicibrciqcznsdevk.supabase.co/rest/v1/accounts',
+    'https://example.supabase.co/rest/v1/accounts',
   ];
 
   bypassUrls.forEach((testUrl) => {

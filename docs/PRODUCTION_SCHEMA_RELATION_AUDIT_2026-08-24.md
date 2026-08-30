@@ -1,8 +1,8 @@
-# Production Schema & Relation Audit — 2026-08-24
+﻿# Production Schema & Relation Audit â€” 2026-08-24
 
 ## Scope
 
-Live Supabase project `qyjhicibrciqcznsdevk` was inspected directly across the `public` schema, including tables, columns, RLS, table privileges, policies, foreign keys, triggers, SECURITY DEFINER RPCs, ledger invariants, and tenant-crossing relations. Repository ledger/AI code and existing forensic reports were also reviewed.
+Live Supabase project `<supabase-project-ref>` was inspected directly across the `public` schema, including tables, columns, RLS, table privileges, policies, foreign keys, triggers, SECURITY DEFINER RPCs, ledger invariants, and tenant-crossing relations. Repository ledger/AI code and existing forensic reports were also reviewed.
 
 ## Production defect reproduced from UI evidence
 
@@ -49,3 +49,4 @@ The checked repository audit history also identified older application-level fin
 ## Release note
 
 The database-side fix for the screenshot's `42501` failure is applied to production and committed to Git. A fresh authenticated account-creation smoke test should be performed after the current Vercel deployment picks up the migration state.
+

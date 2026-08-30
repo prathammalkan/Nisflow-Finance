@@ -2,13 +2,15 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === 'production';
 
-// Extract dynamic Supabase host if configured
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://qyjhicibrciqcznsdevk.supabase.co';
-let supabaseHost = 'qyjhicibrciqcznsdevk.supabase.co';
-try {
-  supabaseHost = new URL(supabaseUrl).host;
-} catch {
-  // Use default
+// Derive Supabase host dynamically from env — never hardcode project refs in source
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+let supabaseHost = '';
+if (supabaseUrl) {
+  try {
+    supabaseHost = new URL(supabaseUrl).host;
+  } catch {
+    supabaseHost = '';
+  }
 }
 
 const securityHeaders = [
@@ -59,14 +61,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "qyjhicibrciqcznsdevk.supabase.co",
-        pathname: "/**",
-      },
-    ],
+    remotePatterns: supabaseHost
+      ? [{ protocol: 'https' as const, hostname: supabaseHost, pathname: '/**' }]
+      : [],
   },
+
   async headers() {
     return [
       {

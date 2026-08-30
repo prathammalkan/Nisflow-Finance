@@ -29,14 +29,20 @@ test('NEXTJS [08-02]: Production CSP excludes unsafe-eval', () => {
   assert.match(code, /isProd\s*\?\s*"script-src 'self' 'unsafe-inline'"/, 'Production CSP must omit unsafe-eval');
 });
 
-test('NEXTJS [08-03]: Image optimization remote patterns prevent SSRF by restricting allowed hosts', () => {
+test('NEXTJS [08-03]: Image optimization remote patterns restrict allowed hosts (dynamically from env)', () => {
   const configPath = path.join(process.cwd(), 'next.config.ts');
   const code = fs.readFileSync(configPath, 'utf8');
 
-  // Verify remotePatterns is configured only for Supabase storage host
-  assert.match(code, /remotePatterns:\s*\[[\s\S]*?hostname:\s*"qyjhicibrciqcznsdevk\.supabase\.co"/, 'Remote patterns must restrict image domains');
-  assert.doesNotMatch(code, /hostname:\s*"\*"/, 'Wildcard domains in image loader must NOT be allowed');
+  // Verify remotePatterns is configured from NEXT_PUBLIC_SUPABASE_URL env var, not hardcoded
+  assert.match(code, /remotePatterns/, 'next.config.ts must have remotePatterns configured');
+  // Must NOT use a hardcoded project-specific hostname (security: no project ref in source)
+  assert.doesNotMatch(code, /hostname:\s*["'][\w-]+\.supabase\.co["']/, 'remotePatterns must NOT hardcode a project-specific hostname — use env-derived supabaseHost');
+  // Must NOT allow wildcards
+  assert.doesNotMatch(code, /hostname:\s*["']\*["']/, 'Wildcard domains in image loader must NOT be allowed');
+  // supabaseHost must be derived from the env variable
+  assert.match(code, /NEXT_PUBLIC_SUPABASE_URL/, 'next.config.ts must derive the Supabase host from NEXT_PUBLIC_SUPABASE_URL env var');
 });
+
 
 test('NEXTJS [08-04]: /api/recurring/execute applies timing-safe comparison to prevent secret enumeration', () => {
   const routePath = path.join(process.cwd(), 'src', 'app', 'api', 'recurring', 'execute', 'route.ts');
