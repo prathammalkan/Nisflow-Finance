@@ -27,9 +27,14 @@ export function useInvestment(id: string) {
     queryKey: ['investments', id],
     queryFn: async () => {
       const supabase = createClient();
+      // MED-02: Authenticate and scope by user_id for defense-in-depth
+      const { data: userData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !userData.user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase.from('investments') as any)
         .select('*, investment_transactions(*)')
         .eq('id', id)
+        .eq('user_id', userData.user.id)
         .single();
       if (error) throw error;
       return data;

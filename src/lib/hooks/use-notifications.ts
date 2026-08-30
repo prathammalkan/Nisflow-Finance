@@ -28,9 +28,14 @@ export function useNotifications() {
   return useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
+      // MED-06: Authenticate and scope by user_id for defense-in-depth
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -50,10 +55,15 @@ export function useMarkNotificationRead() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      // MED-06: Authenticate and scope by user_id to prevent cross-user notification mark-read
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const { data, error } = await (supabase
         .from('notifications') as any)
         .update({ is_read: true })
         .eq('id', id)
+        .eq('user_id', user.id)
         .select()
         .single();
 
@@ -65,6 +75,7 @@ export function useMarkNotificationRead() {
     },
   });
 }
+
 
 export function useMarkAllRead() {
   const supabase = createClient();

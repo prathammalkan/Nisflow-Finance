@@ -139,10 +139,17 @@ export async function checkInsightRateLimit(userId: string, req: Request): Promi
   return limitRequest('insights', identifier, 15, 3600);
 }
 
-// 4. Data Reset Limiter: 5 requests per 10 minutes (600s) per user
+// 4. Data Reset Execute Limiter: 5 requests per 10 minutes (600s) per user
 export async function checkResetDataRateLimit(userId: string, req: Request): Promise<RateLimitResult> {
   const ip = getClientIp(req);
   const identifier = `${userId}:${ip}`;
-  return limitRequest('reset_data', identifier, 5, 600);
+  return limitRequest('reset_data_execute', identifier, 5, 600);
 }
 
+// 5. Data Reset Preview Limiter: 20 requests per 60 seconds per user (separate bucket — BE-02/LOW-11)
+// Preview is much less dangerous than execute, so it gets a more generous independent bucket.
+export async function checkPreviewRateLimit(userId: string, req: Request): Promise<RateLimitResult> {
+  const ip = getClientIp(req);
+  const identifier = `${userId}:${ip}`;
+  return limitRequest('reset_data_preview', identifier, 20, 60);
+}

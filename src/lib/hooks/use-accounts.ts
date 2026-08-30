@@ -15,9 +15,14 @@ export function useAccounts(includeInactive = false) {
   return useQuery({
     queryKey: ['accounts', includeInactive],
     queryFn: async () => {
+      // MED-03: Authenticate and scope by user_id for defense-in-depth
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       let query = supabase
         .from('accounts')
         .select('*')
+        .eq('user_id', user.id)
         .order('name', { ascending: true });
 
       if (!includeInactive) {
@@ -37,10 +42,15 @@ export function useAccount(id: string) {
   return useQuery({
     queryKey: ['accounts', id],
     queryFn: async () => {
+      // MED-03: Authenticate and scope by user_id for defense-in-depth
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('accounts')
         .select('*')
         .eq('id', id)
+        .eq('user_id', user.id)
         .single();
         
       if (error) throw error;
@@ -181,6 +191,10 @@ export function useAccountStats(id: string) {
   return useQuery({
     queryKey: ['account-stats', id],
     queryFn: async () => {
+      // LOW-02: Authenticate and scope by user_id for defense-in-depth
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -191,6 +205,7 @@ export function useAccountStats(id: string) {
         .from('transactions')
         .select('type, amount')
         .eq('account_id', id)
+        .eq('user_id', user.id)
         .gte('date', startOfMonth.toISOString());
 
       if (error) throw error;

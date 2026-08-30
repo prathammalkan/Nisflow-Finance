@@ -16,8 +16,13 @@ test('AI SECURITY [06-01]: /api/chat enforces bounded message history and payloa
   // Verify per-message truncation (slice(0, 2000))
   assert.match(code, /\.slice\(0,\s*2000\)/, 'Must truncate message content to 2000 characters');
 
-  // Verify role sanitization
-  assert.match(code, /role:\s*\(m\.role\s*===\s*'user'\s*\?\s*'user'\s*:\s*'assistant'\)/, 'Must sanitize message roles');
+  // Verify role sanitization — either via Zod enum or inline ternary
+  const hasZodRoleEnum = code.includes("z.enum(['user', 'assistant'])") || code.includes('z.enum(["user", "assistant"])');
+  const hasInlineRoleFilter = /role:\s*\(m\.role\s*===\s*'user'\s*\?\s*'user'\s*:\s*'assistant'\)/.test(code);
+  assert.ok(
+    hasZodRoleEnum || hasInlineRoleFilter,
+    'Must sanitize message roles (via Zod enum or inline ternary)'
+  );
 });
 
 test('AI SECURITY [06-02]: AI Context Builder isolates tenant data and bounds record queries', () => {

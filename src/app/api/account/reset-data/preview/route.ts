@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { checkResetDataRateLimit } from '@/lib/security/rate-limit';
+import { checkPreviewRateLimit } from '@/lib/security/rate-limit';
+
 
 export async function GET(req: Request) {
   try {
@@ -11,7 +12,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     }
 
-    const rateLimitResult = await checkResetDataRateLimit(user.id, req);
+    // LOW-11/BE-02: Use separate preview rate-limit bucket (20/60s) independent of execute bucket (5/600s)
+    const rateLimitResult = await checkPreviewRateLimit(user.id, req);
+
     if (rateLimitResult.status === 'rate_limited') {
       return NextResponse.json(
         { error: `Too many reset preview requests. Please wait ${rateLimitResult.retryAfter}s before retrying.` },

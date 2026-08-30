@@ -86,6 +86,10 @@ export function useTransaction(id: string) {
   return useQuery({
     queryKey: ['transactions', id],
     queryFn: async () => {
+      // MED-01: Authenticate and scope by user_id for defense-in-depth (RLS is the last line; app layer is the first)
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const { data, error } = await supabase
         .from('transactions')
         .select(`
@@ -94,6 +98,7 @@ export function useTransaction(id: string) {
           category:categories(*)
         `)
         .eq('id', id)
+        .eq('user_id', user.id)
         .single();
       
       if (error) throw error;
@@ -293,19 +298,24 @@ export function useLinkTransactions() {
 
   return useMutation({
     mutationFn: async ({ fromId, toId }: { fromId: string; toId: string }) => {
-      // Begin a simple update for both
+      // MED-04: Authenticate first; scope both updates by user_id to prevent cross-tenant link injection
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
       const { error: err1 } = await supabase
         .from('transactions')
         // @ts-ignore
         .update({ linked_transaction_id: toId } as any)
-        .eq('id', fromId);
+        .eq('id', fromId)
+        .eq('user_id', user.id);
       if (err1) throw err1;
 
       const { error: err2 } = await supabase
         .from('transactions')
         // @ts-ignore
         .update({ linked_transaction_id: fromId } as any)
-        .eq('id', toId);
+        .eq('id', toId)
+        .eq('user_id', user.id);
       if (err2) throw err2;
 
       return true;
@@ -319,3 +329,4 @@ export function useLinkTransactions() {
     }
   });
 }
+

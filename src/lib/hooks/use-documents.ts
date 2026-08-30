@@ -7,7 +7,13 @@ export function useDocuments(entityType?: string, entityId?: string) {
   return useQuery({
     queryKey: ['documents', entityType, entityId],
     queryFn: async () => {
-      let query = supabase.from('documents').select('*').order('created_at', { ascending: false });
+      // MED-05: Authenticate and scope by user_id for defense-in-depth
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
+      let query = supabase.from('documents').select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
       if (entityType) query = query.eq('entity_type', entityType);
       if (entityId) query = query.eq('entity_id', entityId);

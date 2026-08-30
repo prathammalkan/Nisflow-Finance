@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     // Cap description length to prevent prompt injection
     const sanitizedDescription = String(description).slice(0, 200);
 
-    // Fetch user's categories from transaction_categories
+    // Fetch user's categories — scoped by user_id (system categories use user_id filter via RLS)
     const { data: categories, error } = await supabase
       .from('transaction_categories')
       .select('id, name, type, is_system')
@@ -59,25 +59,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to fetch categories' }, { status: 500 });
     }
 
-    // Prepare categories string for the AI prompt
-    const categoryList = ((categories as any[]) || [])
-      .map((c) => `- ID: ${c.id} | Name: ${c.name} | Type: ${c.type}`)
+    const categoryRows = (categories as any[]) || [];
+
+    // LOW-01: Use positional index instead of UUID in AI prompt to prevent UUID leakage to external provider
+    // LOW-12: After AI returns an index, resolve it to UUID server-side and validate ownership
+    const categoryList = categoryRows
+      .map((c, i) => `- [${i}] ${c.name} (${c.type})`)
       .join('\n');
 
     const google = getGoogleAIProvider();
     const model = getCanonicalAIModel();
 
-    // Use Gemini to categorize
+    // Use Gemini to categorize — AI returns a positional index, not a UUID
     const { object } = await generateObject({
       model: google(model),
       schema: z.object({
-        categoryId: z.string().uuid().describe('The ID of the best matching category'),
+        categoryIndex: z.number().int().min(0).describe('The zero-based index of the best matching category from the list'),
         confidence: z.number().min(0).max(1).describe('Confidence score from 0 to 1'),
       }),
       prompt: `You are a smart financial categorizer.
 Given a transaction description, you must pick the single best matching category from the user's available categories.
 
-User's Categories:
+User's Categories (use the number index [N] to identify them):
 ${categoryList}
 
 Transaction Description: "${sanitizedDescription}"
@@ -85,11 +88,20 @@ Transaction Description: "${sanitizedDescription}"
 If it's an expense like "Starbucks", "Uber", or "Rent", pick the matching expense category.
 If it's income like "Salary", pick an income category.
 If no exact match exists, pick the closest general category (like "Other Expense" or "Other Income").
-Return ONLY the category ID and a confidence score.`,
+Return ONLY the category index number and a confidence score.`,
     });
 
+    // LOW-12: Validate that the returned index is within bounds (server-side ownership validation)
+    const idx = object.categoryIndex;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= categoryRows.length) {
+      return NextResponse.json({ error: 'AI returned invalid category selection.' }, { status: 422 });
+    }
+
+    // Resolve index to UUID server-side — the client never had a UUID to manipulate
+    const resolvedCategory = categoryRows[idx];
+
     return NextResponse.json({
-      categoryId: object.categoryId,
+      categoryId: resolvedCategory.id,
       confidence: object.confidence,
     });
   } catch (error) {

@@ -29,6 +29,8 @@ export function useAccessStatus() {
 
 /**
  * Hook to check if no admin exists (for bootstrap flow).
+ * Uses admin_exists() SECURITY DEFINER RPC — does NOT expose admin UUIDs.
+ * LOW-05: Direct table read replaced with boolean RPC to prevent UUID enumeration.
  */
 export function useAdminExists() {
   const supabase = createClient();
@@ -36,14 +38,15 @@ export function useAdminExists() {
   return useQuery({
     queryKey: ['admin-exists'],
     queryFn: async () => {
-      const { data, error } = await (supabase.from('app_admin_users') as any)
-        .select('user_id')
-        .limit(1);
+      const { data, error } = await supabase.rpc('admin_exists' as any);
       if (error) {
-        // Table may not exist yet
-        return true; // Assume admin exists to prevent bootstrap in error state
+        // RPC not yet deployed (migration pending) — assume admin exists to prevent bootstrap in error state
+        if (error.code === '42883' || error.message?.includes('does not exist')) {
+          return true;
+        }
+        return true; // Fail safe: assume admin exists
       }
-      return (data?.length ?? 0) > 0;
+      return Boolean(data);
     },
     staleTime: 60_000,
   });
