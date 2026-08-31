@@ -91,7 +91,7 @@ export function useRecentTransactions(limit: number) {
     queryFn: async () => {
       const { data } = await supabase
         .from('transactions')
-        .select('*, account:accounts(name), category:categories(name)')
+        .select('*, account:accounts(name), category:transaction_categories(name)')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limit);

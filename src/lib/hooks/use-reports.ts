@@ -325,7 +325,7 @@ export function useTaxReport(financialYear: string) {
       const end = new Date(toYear, 2, 31, 23, 59, 59).toISOString(); // March 31
 
       const [{ data: txns }, { data: taxRecords }] = await Promise.all([
-        supabase.from('transactions').select('amount, type, category:categories(name)').eq('user_id', userData.user.id).gte('date', start).lte('date', end),
+        supabase.from('transactions').select('amount, type, category:transaction_categories(name)').eq('user_id', userData.user.id).gte('date', start).lte('date', end),
         supabase.from('tax_records').select('*').eq('user_id', userData.user.id).eq('financial_year', financialYear),
       ]);
 

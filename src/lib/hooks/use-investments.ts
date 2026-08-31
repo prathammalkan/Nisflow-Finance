@@ -64,9 +64,13 @@ export function useCreateInvestment() {
         .insert({
           user_id: userData.user.id,
           name: payload.name,
-          ticker_symbol: payload.ticker || null,
-          asset_class: payload.type,
-          platform: payload.platform || null,
+          symbol: payload.ticker || null,
+          asset_type: payload.type,
+          broker: payload.platform || null,
+          quantity: payload.units || 0,
+          total_invested: payload.current_value || 0,
+          current_value: payload.current_value || 0,
+          purchase_price: payload.avg_purchase_price || null,
         })
         .select()
         .single();
@@ -205,9 +209,7 @@ export function useCreateInvestmentTransaction() {
         await (supabase.from('investments') as any)
           .update({
             total_invested: newInvested.toNumber(),
-            invested_amount: newInvested.toNumber(),
             quantity: newQty.toNumber(),
-            units: newQty.toNumber(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', transaction.investment_id)

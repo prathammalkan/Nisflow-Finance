@@ -17,7 +17,7 @@ export function useRecurringTransactions() {
       if (!user) throw new Error('Not authenticated');
 
       const { data, error } = await (supabase.from('recurring_transactions') as any)
-        .select('*, account:accounts(id,name), category:categories(id,name,icon)')
+        .select('*, account:accounts(id,name), category:transaction_categories(id,name,icon)')
         .eq('is_active', true)
         .eq('user_id', user.id)
         .order('next_due_date', { ascending: true });

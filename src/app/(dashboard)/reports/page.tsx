@@ -32,7 +32,7 @@ export default function ReportsPage() {
 
       const { data, error } = await supabase
         .from('transactions')
-        .select('date, description, amount, direction, categories!transactions_category_id_fkey(name)')
+        .select('date, description, amount, direction, transaction_categories!transactions_category_id_fkey(name)')
         .eq('user_id', userData.user.id)
         .gte('date', startOfMonth.toISOString())
         .order('date', { ascending: false });
@@ -50,7 +50,7 @@ export default function ReportsPage() {
         description: tx.description,
         amount: Number(tx.amount),
         direction: tx.direction,
-        category: tx.categories?.name || 'Uncategorized'
+        category: tx.transaction_categories?.name || 'Uncategorized'
       }));
 
       const monthName = format(new Date(), 'MMMM');
@@ -80,7 +80,7 @@ export default function ReportsPage() {
       
       const { data, error } = await supabase
         .from('transactions')
-        .select('amount, direction, categories!transactions_category_id_fkey(name)')
+        .select('amount, direction, transaction_categories!transactions_category_id_fkey(name)')
         .eq('user_id', userData.user.id)
         .gte('date', startOfYear.toISOString());
 
@@ -95,7 +95,7 @@ export default function ReportsPage() {
       // Aggregate by category
       const categoryMap = new Map<string, { in: number, out: number }>();
       data.forEach((tx: any) => {
-        const cat = tx.categories?.name || 'Uncategorized';
+        const cat = tx.transaction_categories?.name || 'Uncategorized';
         const amt = Number(tx.amount);
         if (!categoryMap.has(cat)) {
           categoryMap.set(cat, { in: 0, out: 0 });

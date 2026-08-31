@@ -41,7 +41,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
         .select(`
           *,
           account:accounts(id, name, type),
-          category:categories(id, name, icon)
+          category:transaction_categories(id, name, icon)
         `, { count: 'exact' });
 
       // Apply filters
@@ -95,7 +95,7 @@ export function useTransaction(id: string) {
         .select(`
           *,
           account:accounts(*),
-          category:categories(*)
+          category:transaction_categories(*)
         `)
         .eq('id', id)
         .eq('user_id', user.id)
