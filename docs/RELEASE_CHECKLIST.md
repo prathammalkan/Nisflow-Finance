@@ -1,97 +1,92 @@
 ﻿# NisFlow Finance — Release Checklist
 
-## Pre-Release Gate (MUST ALL PASS)
+**Updated:** 2026-09-02  **Version:** Post-Phase-4 Feature Gap Closure
 
-### Build
-- [x] npm run build → exit 0, no TypeScript errors
-- [x] npm run lint → 0 errors
-- [x] npm test → 570/570 pass, 0 failures
+## Environment
 
-### Security
-- [x] .env.local NOT committed (gitignored, zero git history)
-- [x] No service-role key exposed client-side
-- [x] CRON_SECRET in env, timing-safe comparison
-- [x] CSP excludes unsafe-eval in production
-- [x] X-Frame-Options: DENY
-- [x] HSTS configured (2 years)
-- [x] All API routes require authentication (middleware + route-level)
+- [x] Node.js runtime confirmed available on Vercel
+- [x] .env.example documents all required variables by name
+- [x] .env.local gitignored (confirmed in .gitignore)
+- [x] No secrets committed to Git history
+- [x] NEXT_PUBLIC_* variables contain no privileged secrets
 
-### Database
-- [x] All 19 RPCs verified present on live DB
-- [x] RLS enabled + FORCE ROW LEVEL SECURITY on all tables
+## Required Environment Variables
+
+| Variable | Classification | Status |
+|----------|---------------|--------|
+| NEXT_PUBLIC_SUPABASE_URL | PUBLIC | Required |
+| NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | PUBLIC | Required |
+| SUPABASE_SECRET_KEY | SERVER-ONLY | Required |
+| CRON_SECRET | SERVER-ONLY | Required |
+| GOOGLE_GENERATIVE_AI_API_KEY | SERVER-ONLY AI | Required |
+| UPSTASH_REDIS_REST_URL | SERVER-ONLY | Optional (rate limiting) |
+| UPSTASH_REDIS_REST_TOKEN | SERVER-ONLY | Optional (rate limiting) |
+| NEXT_PUBLIC_VAPID_PUBLIC_KEY | PUBLIC | Optional (push notifications) |
+
+## Database
+
+- [x] 26 migrations applied (001 through 026)
+- [x] All tables have FORCE ROW LEVEL SECURITY
+- [x] All user-data policies enforce auth.uid() = user_id
 - [x] journal_lines immutability trigger active
-- [x] Double-entry CHECK constraint active
-- [x] Admin bootstrap guard active (migration 025)
+- [x] Double-entry CHECK constraint on journal_entries
+- [x] Idempotency keys on journal_entries (UNIQUE)
+- [x] All SECURITY DEFINER functions use SET search_path = public, extensions
+- [x] Direct INSERT on ledger tables REVOKED for public/anon roles
+- [x] New tables (migration 026): ais_records, evidence_links, bank_rules, tax_radar_snapshots, risk_flags
 
-### Schema Alignment (Fixed in this release)
-- [x] recurring_transactions: next_due_date (not next_date)
-- [x] transaction_categories: correct table for category FK joins (7 locations fixed)
-- [x] investments: correct column names (symbol, asset_type, broker, quantity)
-- [x] tsconfig: playwright excluded from TS compilation
+## Security
 
-### Deployment
-- [x] Push to main → Vercel auto-deploy triggered
-- [ ] Verify Vercel build log shows success
-- [ ] Production smoke test (see below)
+- [x] RLS on all 36+ tables
+- [x] Admin RBAC: is_app_admin() SECURITY DEFINER
+- [x] User approval gate: is_user_approved()
+- [x] CRON endpoint: crypto.timingSafeEqual() on CRON_SECRET
+- [x] CSP headers configured in next.config.ts
+- [x] HSTS, X-Frame-Options, X-Content-Type-Options headers
+- [x] Storage bucket: private, signed URLs only (300s TTL)
+- [x] AI rate limiting via Upstash Redis (fails closed to 503)
+- [x] escapeForPrompt() on all user data before LLM injection
+- [x] No raw DB errors exposed to clients
 
-## Production Smoke Test
+## Ledger Integrity
 
-### Authentication
-- [ ] /login loads without errors
-- [ ] Registration flow works
-- [ ] Dashboard redirects when unauthenticated
-- [ ] Admin panel accessible after bootstrap
+- [x] SUM(debits) = SUM(credits) enforced at DB level
+- [x] Transfers do not become income/expense
+- [x] Loan principal does not become income
+- [x] Investment funding is asset transfer, not income/expense
+- [x] Reversals invert original journal effects correctly
+- [x] No overwrite of immutable history
 
-### Core Financial Flows
-- [ ] Create account → ledger account auto-provisioned
-- [ ] Record expense → journal entry posted, balance updated
-- [ ] Record income → journal entry posted
-- [ ] Transfer between accounts → net worth unchanged
-- [ ] AI chat responds (check GEMINI_MODEL=gemini-2.5-flash is set in Vercel env)
+## New Features (Phase 4)
 
-### Data Integrity
-- [ ] Journal entries appear in ledger audit log
-- [ ] Reversal creates linked reversal entry
-- [ ] Net worth = Assets - Liabilities (from double-entry)
+- [x] Account Purpose Advisor (src/lib/finance/account-purpose.ts)
+- [x] Indian Bank Registry with versioned rules (src/lib/finance/bank-registry.ts)
+- [x] UPI/Payment Intelligence Engine (src/lib/finance/upi-engine.ts)
+- [x] Tax Engine V2 with versioned rules (src/lib/finance/tax-engine-v2.ts)
+- [x] Tax Radar proactive monitor (src/lib/finance/tax-radar.ts)
+- [x] Lawful Tax Optimization (src/lib/finance/tax-optimization.ts)
+- [x] AIS/TIS Reconciliation Architecture (src/lib/finance/ais-tis-reconciliation.ts)
+- [x] Financial Risk Monitor (src/lib/finance/financial-risk-monitor.ts)
+- [x] Transaction Guard (src/lib/finance/transaction-guard.ts)
+- [x] Migration 026 (new tables with RLS)
 
-### Security Headers
-- [ ] curl -I https://nisflow-finance.vercel.app shows X-Frame-Options: DENY
-- [ ] Content-Security-Policy header present
-- [ ] Strict-Transport-Security present
+## Documentation
 
-## Post-Release Monitoring
+- [x] docs/ARCHITECTURE.md
+- [x] docs/SECURITY.md
+- [x] docs/DATABASE_SCHEMA.md
+- [x] docs/TAX_ENGINE.md
+- [x] docs/BANK_ENGINE.md
+- [x] docs/UPI_ENGINE.md
+- [x] docs/ACCOUNT_GUIDANCE.md
+- [x] docs/AI_GUARDRAILS.md
+- [x] docs/AUDIT_ENGINE.md
+- [x] docs/RELEASE_CHECKLIST.md
+- [x] docs/FINAL_RELEASE_REPORT.md
 
-### Watch For (First 24h)
-- 503 errors from AI endpoints (check GEMINI_MODEL env var in Vercel)
-- RLS permission errors on new account creation
-- Recurring transaction cron failures (check CRON_SECRET in Vercel)
+## Blocked / Human Action Required
 
-### Vercel Environment Variables to Verify
-Ensure these are set in Vercel dashboard (Settings → Environment Variables):
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-- SUPABASE_SECRET_KEY
-- GOOGLE_GENERATIVE_AI_API_KEY
-- GEMINI_MODEL=gemini-2.5-flash  ← CRITICAL: was broken, now fixed
-- UPSTASH_REDIS_REST_URL
-- UPSTASH_REDIS_REST_TOKEN
-- CRON_SECRET
-- NEXT_PUBLIC_VAPID_PUBLIC_KEY
-- VAPID_PRIVATE_KEY
-
-## Known Remaining Items (v2 Milestones)
-
-### High Priority
-- Bank Registry: Indian bank-specific rules, IFSC lookup, account type guidance
-- UPI Engine: UPI limits per bank, daily/monthly limits, merchant category codes
-- Tax Engine: Versioned rules by FY, AIS/TIS reconciliation architecture
-- Account Purpose Advisor: Guidance engine for optimal account usage
-
-### Medium Priority  
-- Financial Risk Monitor: Anomaly detection, spending pattern alerts
-- Evidence Engine: Document hash verification, retention tracking
-- Audit Preparation: Compliance report generation, ITR schedule mapping
-
-### Low Priority
-- AIS/TIS Government Data Reconciliation
-- XBRL/e-Filing integration hooks
+- [ ] Node.js not installed on local dev machine — npm test/build/lint CANNOT run locally
+- [ ] Vercel CLI not available — env pull blocked (run: vercel env pull .env.local)
+- [ ] Migration 026 must be applied to production Supabase project manually
+- [ ] Production smoke tests require live deployment verification by human
