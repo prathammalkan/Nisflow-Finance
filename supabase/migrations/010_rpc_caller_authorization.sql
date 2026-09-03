@@ -1,0 +1,342 @@
+-- ==============================================================================
+-- NISFLOW FINANCE — MIGRATION 010: SECURITY DEFINER RPC CALLER AUTHORIZATION
+-- ==============================================================================
+--
+-- Mandatory Security Fix for [HIGH-01]:
+-- Hardens all SECURITY DEFINER stored procedures against unauthorized cross-tenant
+-- and anonymous PostgREST RPC invocation.
+--
+-- Invariants Enforced:
+-- 1. If called by an authenticated user ('authenticated'), auth.uid() MUST equal p_user_id.
+-- 2. If called anonymously ('anon'), the RPC MUST immediately reject execution.
+-- 3. Legitimate service_role and internal superuser execution remains permitted.
+-- ==============================================================================
+
+-- 1. Hardened post_journal_entry
+CREATE OR REPLACE FUNCTION public.post_journal_entry(
+    p_user_id UUID,
+    p_transaction_date DATE,
+    p_description TEXT,
+    p_source_type TEXT,
+    p_source_id TEXT,
+    p_idempotency_key TEXT,
+    p_lines JSONB,
+    p_created_by UUID,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+)
+RETURNS UUID AS $$
+DECLARE
+    v_existing_entry_id UUID;
+    v_new_entry_id UUID;
+    v_total_debit NUMERIC(15,2) := 0.00;
+    v_total_credit NUMERIC(15,2) := 0.00;
+    v_line_count INT;
+    v_line RECORD;
+    v_account_ids UUID[] := ARRAY[]::UUID[];
+    v_payload_text TEXT := '';
+    v_payload_hash TEXT;
+    v_line_account_type public.ledger_account_type;
+    v_line_entity_type TEXT;
+    v_line_entity_id UUID;
+    v_line_delta NUMERIC(15,2);
+BEGIN
+    -- 0. AUTHENTICATED CALLER & TENANT AUTHORIZATION INVARIANT
+    IF auth.role() = 'authenticated' AND (auth.uid() IS NOT NULL AND auth.uid() <> p_user_id) THEN
+        RAISE EXCEPTION 'Authorization Error: Caller auth.uid (%) does not match target user_id (%).',
+            auth.uid(), p_user_id;
+    END IF;
+
+    IF auth.role() = 'anon' OR (auth.uid() IS NULL AND COALESCE(current_setting('request.jwt.claim.role', true), '') = 'anon') THEN
+        RAISE EXCEPTION 'Authentication Required: Anonymous callers cannot post journal entries.';
+    END IF;
+
+    -- 1. Idempotency Check: Return existing entry ID if already posted
+    SELECT id INTO v_existing_entry_id
+    FROM public.journal_entries
+    WHERE user_id = p_user_id AND idempotency_key = p_idempotency_key;
+
+    IF v_existing_entry_id IS NOT NULL THEN
+        RETURN v_existing_entry_id;
+    END IF;
+
+    -- 2. Validate Line Count (Double entry mandates >= 2 lines)
+    v_line_count := jsonb_array_length(p_lines);
+    IF v_line_count < 2 THEN
+        RAISE EXCEPTION 'Financial Integrity Error: A journal entry must have at least 2 lines (found %).', v_line_count;
+    END IF;
+
+    -- 3. Extract and lock all involved ledger accounts in sorted order to prevent deadlocks
+    FOR v_line IN SELECT * FROM jsonb_to_recordset(p_lines) AS x(
+        ledger_account_id UUID,
+        debit_amount NUMERIC(15,2),
+        credit_amount NUMERIC(15,2),
+        currency TEXT,
+        memo TEXT
+    )
+    LOOP
+        v_account_ids := array_append(v_account_ids, v_line.ledger_account_id);
+        
+        -- Validate line values
+        IF v_line.debit_amount < 0 OR v_line.credit_amount < 0 THEN
+            RAISE EXCEPTION 'Financial Integrity Error: Debit and credit amounts must be non-negative.';
+        END IF;
+        
+        IF (v_line.debit_amount = 0 AND v_line.credit_amount = 0) OR
+           (v_line.debit_amount > 0 AND v_line.credit_amount > 0) THEN
+            RAISE EXCEPTION 'Financial Integrity Error: Each line must have strictly positive debit OR credit, not both or neither.';
+        END IF;
+
+        v_total_debit := v_total_debit + v_line.debit_amount;
+        v_total_credit := v_total_credit + v_line.credit_amount;
+    END LOOP;
+
+    -- 4. Balancing Invariant Check: SUM(Debits) === SUM(Credits)
+    IF v_total_debit <> v_total_credit THEN
+        RAISE EXCEPTION 'Financial Integrity Error: Unbalanced journal entry. Total Debits (%) must equal Total Credits (%). Discrepancy: %',
+            v_total_debit, v_total_credit, (v_total_debit - v_total_credit);
+    END IF;
+
+    IF v_total_debit <= 0 THEN
+        RAISE EXCEPTION 'Financial Integrity Error: Total journal amount must be strictly greater than zero.';
+    END IF;
+
+    -- 5. Lock affected ledger accounts (SELECT ... FOR UPDATE) and verify ownership
+    PERFORM id FROM public.ledger_accounts
+    WHERE id = ANY(v_account_ids) AND user_id = p_user_id
+    ORDER BY id
+    FOR UPDATE;
+
+    -- Verify all accounts exist and belong to target user
+    IF (SELECT COUNT(*) FROM public.ledger_accounts WHERE id = ANY(v_account_ids) AND user_id = p_user_id) <> array_length(v_account_ids, 1) THEN
+        RAISE EXCEPTION 'Financial Integrity Error: One or more ledger accounts do not exist or belong to another user.';
+    END IF;
+
+    -- 6. Insert Journal Entry Header
+    INSERT INTO public.journal_entries (
+        user_id,
+        transaction_date,
+        description,
+        source_type,
+        source_id,
+        idempotency_key,
+        status,
+        created_by
+    ) VALUES (
+        p_user_id,
+        p_transaction_date,
+        p_description,
+        p_source_type,
+        p_source_id,
+        p_idempotency_key,
+        'posted',
+        p_created_by
+    ) RETURNING id INTO v_new_entry_id;
+
+    -- 7. Insert Journal Lines & update cached balances for account entities
+    v_payload_text := v_new_entry_id::text || '|' || p_transaction_date::text || '|' || v_total_debit::text || ':';
+
+    FOR v_line IN SELECT * FROM jsonb_to_recordset(p_lines) AS x(
+        ledger_account_id UUID,
+        debit_amount NUMERIC(15,2),
+        credit_amount NUMERIC(15,2),
+        currency TEXT,
+        memo TEXT
+    )
+    LOOP
+        INSERT INTO public.journal_lines (
+            journal_entry_id,
+            ledger_account_id,
+            user_id,
+            debit_amount,
+            credit_amount,
+            currency,
+            memo
+        ) VALUES (
+            v_new_entry_id,
+            v_line.ledger_account_id,
+            p_user_id,
+            v_line.debit_amount,
+            v_line.credit_amount,
+            COALESCE(v_line.currency, 'INR'),
+            v_line.memo
+        );
+
+        v_payload_text := v_payload_text || '[' || v_line.ledger_account_id::text || ',' || v_line.debit_amount::text || ',' || v_line.credit_amount::text || ']';
+
+        -- If ledger account maps to an account entity in public.accounts, update cached balance atomically
+        SELECT account_type, entity_type, entity_id 
+        INTO v_line_account_type, v_line_entity_type, v_line_entity_id
+        FROM public.ledger_accounts
+        WHERE id = v_line.ledger_account_id;
+
+        IF v_line_entity_type = 'account' AND v_line_entity_id IS NOT NULL THEN
+            IF v_line_account_type = 'asset' THEN
+                v_line_delta := v_line.debit_amount - v_line.credit_amount;
+            ELSE
+                v_line_delta := v_line.credit_amount - v_line.debit_amount;
+            END IF;
+
+            -- Synchronize BOTH balance and current_balance projections
+            UPDATE public.accounts
+            SET balance = COALESCE(balance, 0.00) + v_line_delta,
+                current_balance = COALESCE(current_balance, 0.00) + v_line_delta,
+                updated_at = NOW()
+            WHERE id = v_line_entity_id AND user_id = p_user_id;
+        END IF;
+    END LOOP;
+
+    -- 8. Compute true cryptographic SHA-256 hash for audit record (64 hex chars)
+    v_payload_hash := encode(sha256(v_payload_text::bytea), 'hex');
+
+    -- 9. Insert Immutable Audit Log Record
+    INSERT INTO public.ledger_audit_log (
+        user_id,
+        journal_entry_id,
+        action,
+        actor_id,
+        payload_hash,
+        metadata
+    ) VALUES (
+        p_user_id,
+        v_new_entry_id,
+        'POST',
+        p_created_by,
+        v_payload_hash,
+        p_metadata
+    );
+
+    RETURN v_new_entry_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions;
+
+-- 2. Hardened post_reversal_entry
+CREATE OR REPLACE FUNCTION public.post_reversal_entry(
+    p_user_id UUID,
+    p_original_entry_id UUID,
+    p_reason TEXT,
+    p_idempotency_key TEXT,
+    p_created_by UUID,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+)
+RETURNS UUID AS $$
+DECLARE
+    v_original_entry RECORD;
+    v_reversal_lines JSONB := '[]'::jsonb;
+    v_line RECORD;
+    v_reversal_entry_id UUID;
+    v_reversal_hash TEXT;
+BEGIN
+    -- 0. AUTHENTICATED CALLER & TENANT AUTHORIZATION INVARIANT
+    IF auth.role() = 'authenticated' AND (auth.uid() IS NOT NULL AND auth.uid() <> p_user_id) THEN
+        RAISE EXCEPTION 'Authorization Error: Caller auth.uid (%) does not match target user_id (%).',
+            auth.uid(), p_user_id;
+    END IF;
+
+    IF auth.role() = 'anon' OR (auth.uid() IS NULL AND COALESCE(current_setting('request.jwt.claim.role', true), '') = 'anon') THEN
+        RAISE EXCEPTION 'Authentication Required: Anonymous callers cannot post reversal entries.';
+    END IF;
+
+    -- 1. Fetch original entry and verify ownership
+    SELECT * INTO v_original_entry
+    FROM public.journal_entries
+    WHERE id = p_original_entry_id AND user_id = p_user_id;
+
+    IF v_original_entry IS NULL THEN
+        RAISE EXCEPTION 'Financial Integrity Error: Original journal entry % not found or unauthorized.', p_original_entry_id;
+    END IF;
+
+    IF v_original_entry.status = 'reversed' THEN
+        RAISE EXCEPTION 'Financial Integrity Error: Journal entry % has already been reversed.', p_original_entry_id;
+    END IF;
+
+    -- 2. Build inverted journal lines (Debits become Credits, Credits become Debits)
+    FOR v_line IN 
+        SELECT ledger_account_id, debit_amount, credit_amount, currency, memo
+        FROM public.journal_lines
+        WHERE journal_entry_id = p_original_entry_id
+    LOOP
+        v_reversal_lines := v_reversal_lines || jsonb_build_object(
+            'ledger_account_id', v_line.ledger_account_id,
+            'debit_amount', v_line.credit_amount,   -- INVERTED
+            'credit_amount', v_line.debit_amount,   -- INVERTED
+            'currency', v_line.currency,
+            'memo', 'Reversal: ' || COALESCE(v_line.memo, v_original_entry.description)
+        );
+    END LOOP;
+
+    -- 3. Post reversal entry via standard posting procedure
+    v_reversal_entry_id := public.post_journal_entry(
+        p_user_id,
+        CURRENT_DATE,
+        'REVERSAL: ' || v_original_entry.description || ' (' || p_reason || ')',
+        'reversal',
+        p_original_entry_id::text,
+        p_idempotency_key,
+        v_reversal_lines,
+        p_created_by,
+        p_metadata || jsonb_build_object('reversal_of_id', p_original_entry_id, 'reason', p_reason)
+    );
+
+    -- 4. Mark original entry as reversed
+    UPDATE public.journal_entries
+    SET status = 'reversed',
+        reversal_of_id = v_reversal_entry_id
+    WHERE id = p_original_entry_id AND user_id = p_user_id;
+
+    -- 5. Record Reversal in Audit Log with true SHA-256 hash
+    v_reversal_hash := encode(sha256(('REVERSE|' || p_original_entry_id::text || '|' || v_reversal_entry_id::text)::bytea), 'hex');
+
+    INSERT INTO public.ledger_audit_log (
+        user_id,
+        journal_entry_id,
+        action,
+        actor_id,
+        payload_hash,
+        metadata
+    ) VALUES (
+        p_user_id,
+        v_reversal_entry_id,
+        'REVERSE',
+        p_created_by,
+        v_reversal_hash,
+        p_metadata || jsonb_build_object('reversed_entry_id', p_original_entry_id)
+    );
+
+    RETURN v_reversal_entry_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions;
+
+-- 3. Hardened reconcile_ledger_balances
+CREATE OR REPLACE FUNCTION public.reconcile_ledger_balances(p_user_id UUID)
+RETURNS TABLE (
+    account_id UUID,
+    account_name TEXT,
+    cached_balance NUMERIC(15,2),
+    ledger_balance NUMERIC(15,2),
+    discrepancy NUMERIC(15,2),
+    is_reconciled BOOLEAN
+) AS $$
+BEGIN
+    -- AUTHENTICATED CALLER & TENANT AUTHORIZATION INVARIANT
+    IF auth.role() = 'authenticated' AND (auth.uid() IS NOT NULL AND auth.uid() <> p_user_id) THEN
+        RAISE EXCEPTION 'Authorization Error: Caller auth.uid (%) does not match target user_id (%).',
+            auth.uid(), p_user_id;
+    END IF;
+
+    IF auth.role() = 'anon' OR (auth.uid() IS NULL AND COALESCE(current_setting('request.jwt.claim.role', true), '') = 'anon') THEN
+        RAISE EXCEPTION 'Authentication Required: Anonymous callers cannot view ledger reconciliations.';
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        a.id AS account_id,
+        a.name AS account_name,
+        COALESCE(a.balance, a.current_balance, 0.00) AS cached_balance,
+        COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00) AS ledger_balance,
+        (COALESCE(a.balance, a.current_balance, 0.00) - COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00)) AS discrepancy,
+        (COALESCE(a.balance, a.current_balance, 0.00) = COALESCE(CASE WHEN la.id IS NOT NULL THEN public.get_ledger_account_balance(la.id) ELSE 0.00 END, 0.00)) AS is_reconciled
+    FROM public.accounts a
+    LEFT JOIN public.ledger_accounts la ON la.entity_id = a.id AND la.entity_type = 'account' AND la.user_id = p_user_id
+    WHERE a.user_id = p_user_id;
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, extensions;
