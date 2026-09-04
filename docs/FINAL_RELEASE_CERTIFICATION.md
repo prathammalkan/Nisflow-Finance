@@ -1,4 +1,4 @@
-﻿# NisFlow Finance — Final Release Certification
+# NisFlow Finance — Final Release Certification
 
 **Certification Agent:** Antigravity AI — FINAL RELEASE CERTIFICATION AGENT  
 **Date:** 2026-09-03  
@@ -191,7 +191,7 @@ Decimal precision: `decimal.js` with 28-digit precision, ROUND_HALF_UP on all mo
 ### Production: ⚠️ MANUAL ACTION REQUIRED
 
 **Before declaring released:**  
-Go to [Supabase Dashboard](https://app.supabase.com/project/qyjhicibrciqcznsdevk) → SQL Editor → confirm the 5 tables above exist with FORCE RLS enabled.  
+Go to [Supabase Dashboard](https://app.supabase.com) → open your project → SQL Editor → confirm the 5 tables above exist with FORCE RLS enabled.  
 If not, run `supabase/migrations/026_feature_gap_closure.sql`.
 
 ---

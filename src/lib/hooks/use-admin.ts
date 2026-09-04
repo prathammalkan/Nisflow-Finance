@@ -2,9 +2,37 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface UserListEntry {
+  user_id: string;
+  email: string | null;
+  status: 'pending' | 'approved' | 'suspended';
+  is_admin: boolean;
+  created_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor_user_id: string;
+  actor_email: string | null;
+  action: string;
+  target_user_id: string | null;
+  target_email: string | null;
+  logged_at: string;
+  result: string;
+  metadata: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// useAccessStatus
+// ---------------------------------------------------------------------------
+
 /**
- * Hook to check the current user's access status and admin role.
- * Used by layouts to gate access for pending/suspended users.
+ * Returns the current user's access status and admin flag.
+ * Used by AccessGate and the admin page to gate content.
  */
 export function useAccessStatus() {
   const supabase = createClient();
@@ -12,9 +40,10 @@ export function useAccessStatus() {
   return useQuery({
     queryKey: ['access-status'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_current_access_status' as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc('get_current_access_status');
       if (error) {
-        // If the RPC doesn't exist yet (migration not applied), treat as approved
+        // Migration not yet applied — treat as approved non-admin
         if (error.code === '42883' || error.message?.includes('does not exist')) {
           return { status: 'approved' as const, is_admin: false };
         }
@@ -22,15 +51,19 @@ export function useAccessStatus() {
       }
       return data as { status: 'pending' | 'approved' | 'suspended'; is_admin: boolean };
     },
-    staleTime: 30_000, // Cache for 30s to avoid excessive RPC calls
+    staleTime: 30_000,
+    refetchInterval: 30_000, // Poll every 30s so pending users auto-unblock on approval
     retry: 1,
   });
 }
 
+// ---------------------------------------------------------------------------
+// useAdminExists
+// ---------------------------------------------------------------------------
+
 /**
- * Hook to check if no admin exists (for bootstrap flow).
- * Uses admin_exists() SECURITY DEFINER RPC — does NOT expose admin UUIDs.
- * LOW-05: Direct table read replaced with boolean RPC to prevent UUID enumeration.
+ * Returns true if at least one admin row exists.
+ * Uses a SECURITY DEFINER boolean RPC — never exposes admin UUIDs.
  */
 export function useAdminExists() {
   const supabase = createClient();
@@ -38,13 +71,14 @@ export function useAdminExists() {
   return useQuery({
     queryKey: ['admin-exists'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('admin_exists' as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc('admin_exists');
       if (error) {
-        // RPC not yet deployed (migration pending) — assume admin exists to prevent bootstrap in error state
+        // RPC not yet deployed — assume admin exists to prevent unwanted bootstrap
         if (error.code === '42883' || error.message?.includes('does not exist')) {
           return true;
         }
-        return true; // Fail safe: assume admin exists
+        return true; // Fail-safe: assume admin exists
       }
       return Boolean(data);
     },
@@ -52,56 +86,59 @@ export function useAdminExists() {
   });
 }
 
-/**
- * Hook to bootstrap the first admin.
- */
+// ---------------------------------------------------------------------------
+// useBootstrapAdmin
+// ---------------------------------------------------------------------------
+
 export function useBootstrapAdmin() {
   const queryClient = useQueryClient();
   const supabase = createClient();
 
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc('bootstrap_first_admin' as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc('bootstrap_first_admin');
       if (error) throw error;
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['access-status'] });
       queryClient.invalidateQueries({ queryKey: ['admin-exists'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-user-list'] });
       toast.success('You are now the system administrator');
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(`Failed to bootstrap admin: ${error.message}`);
     },
   });
 }
 
-/**
- * Admin-only hooks for user management.
- */
+// ---------------------------------------------------------------------------
+// useAdminUserList
+// ---------------------------------------------------------------------------
+
 export function useAdminUserList() {
   const supabase = createClient();
 
   return useQuery({
     queryKey: ['admin-user-list'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_admin_user_list' as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc('get_admin_user_list');
       if (error) throw error;
-      return data as Array<{
-        user_id: string;
-        status: 'pending' | 'approved' | 'suspended';
-        is_admin: boolean;
-        created_at: string;
-      }>;
+      return data as UserListEntry[];
     },
   });
 }
 
+// ---------------------------------------------------------------------------
+// useApproveUser
+// ---------------------------------------------------------------------------
+
 export function useApproveUser() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any;
+  const db = createClient() as any;
 
   return useMutation({
     mutationFn: async (targetUserId: string) => {
@@ -119,15 +156,21 @@ export function useApproveUser() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// useSuspendUser
+// ---------------------------------------------------------------------------
+
 export function useSuspendUser() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any;
+  const db = createClient() as any;
 
   return useMutation({
     mutationFn: async ({ userId, reason }: { userId: string; reason?: string }) => {
-      const { data, error } = await db.rpc('suspend_user', { p_target_user_id: userId, p_reason: reason ?? null });
+      const { data, error } = await db.rpc('suspend_user', {
+        p_target_user_id: userId,
+        p_reason: reason ?? null,
+      });
       if (error) throw error;
       return data;
     },
@@ -141,11 +184,14 @@ export function useSuspendUser() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// useReactivateUser
+// ---------------------------------------------------------------------------
+
 export function useReactivateUser() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any;
+  const db = createClient() as any;
 
   return useMutation({
     mutationFn: async (targetUserId: string) => {
@@ -163,11 +209,14 @@ export function useReactivateUser() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// useSetRegistrationMode
+// ---------------------------------------------------------------------------
+
 export function useSetRegistrationMode() {
   const queryClient = useQueryClient();
-  const supabase = createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any;
+  const db = createClient() as any;
 
   return useMutation({
     mutationFn: async (mode: 'public' | 'approval_required') => {
@@ -185,12 +234,17 @@ export function useSetRegistrationMode() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// useRegistrationMode
+// ---------------------------------------------------------------------------
+
 export function useRegistrationMode() {
   const supabase = createClient();
 
   return useQuery({
     queryKey: ['registration-mode'],
     queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase.from('app_access_settings') as any)
         .select('registration_mode')
         .limit(1)
@@ -198,5 +252,91 @@ export function useRegistrationMode() {
       if (error) return 'public';
       return (data?.registration_mode ?? 'public') as 'public' | 'approval_required';
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// useGrantAdminRole  (NEW — Migration 028)
+// ---------------------------------------------------------------------------
+
+/**
+ * Promotes a target user to admin. Only existing admins can call this.
+ */
+export function useGrantAdminRole() {
+  const queryClient = useQueryClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createClient() as any;
+
+  return useMutation({
+    mutationFn: async (targetUserId: string) => {
+      const { data, error } = await db.rpc('grant_admin_role', {
+        p_target_user_id: targetUserId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-user-list'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-exists'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-audit-log'] });
+      toast.success('Admin role granted');
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to grant admin role: ${error.message}`);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// useRevokeAdminRole  (NEW — Migration 028)
+// ---------------------------------------------------------------------------
+
+/**
+ * Removes admin role from a target user. Admins cannot revoke themselves.
+ */
+export function useRevokeAdminRole() {
+  const queryClient = useQueryClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createClient() as any;
+
+  return useMutation({
+    mutationFn: async (targetUserId: string) => {
+      const { data, error } = await db.rpc('revoke_admin_role', {
+        p_target_user_id: targetUserId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-user-list'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-exists'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-audit-log'] });
+      toast.success('Admin role revoked');
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to revoke admin role: ${error.message}`);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// useAdminAuditLog  (NEW — Migration 028)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches the admin audit log. Only available to admins.
+ */
+export function useAdminAuditLog(limit = 50) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createClient() as any;
+
+  return useQuery({
+    queryKey: ['admin-audit-log', limit],
+    queryFn: async () => {
+      const { data, error } = await db.rpc('get_admin_audit_log', { p_limit: limit });
+      if (error) throw error;
+      return data as AuditLogEntry[];
+    },
+    staleTime: 10_000,
   });
 }

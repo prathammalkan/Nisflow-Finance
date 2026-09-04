@@ -1,7 +1,7 @@
+import { createClient } from '@/lib/supabase/server';
 import { AppShell } from "@/components/layout/app-shell";
 import { CompanionDrawer } from "@/components/ai/companion-drawer";
 import { AccessGate } from "@/components/admin/access-gate";
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -21,4 +21,3 @@ export default async function DashboardLayout({ children }: { children: React.Re
     </AppShell>
   );
 }
-

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * NisFlow Finance — Apply Migration 027 via Supabase Dashboard
  *
  * This script automates applying the resilient handle_new_user trigger
@@ -14,8 +14,15 @@
 import { chromium } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
-const PROJECT_REF = 'qyjhicibrciqcznsdevk';
+// Derive project ref from NEXT_PUBLIC_SUPABASE_URL — never hardcode it in source.
+// e.g. https://qyjhicibrciqcznsdevk.supabase.co → qyjhicibrciqcznsdevk
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const PROJECT_REF = new URL(supabaseUrl).hostname.split('.')[0];
+if (!PROJECT_REF) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set in .env.local');
+
 const SQL_FILE = path.join(__dirname, '..', 'docs', 'E2E_SETUP.sql');
 
 async function applyMigration() {

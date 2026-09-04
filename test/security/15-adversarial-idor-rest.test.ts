@@ -102,7 +102,7 @@ async function apiPost(path: string, body: object, token?: string): Promise<{ st
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Cookie: `sb-qyjhicibrciqcznsdevk-auth-token=${token}` } : {}),
+      ...(token ? { Cookie: `sb-${new URL(SUPA_URL).hostname.split('.')[0]}-auth-token=${token}` } : {}),
     },
     body: JSON.stringify(body),
   });
