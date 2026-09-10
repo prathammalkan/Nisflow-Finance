@@ -35,6 +35,17 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Allow GET /api/account/reset-data through unauthenticated so the route handler
+  // can return the correct HTTP 405 Method Not Allowed (destructive endpoint is POST-only).
+  // Security: POST still requires auth; GET is explicitly rejected by the route handler.
+  if (
+    !user &&
+    request.method === 'GET' &&
+    request.nextUrl.pathname === '/api/account/reset-data'
+  ) {
+    return supabaseResponse;
+  }
+
   // If user is unauthenticated
   if (
     !user &&

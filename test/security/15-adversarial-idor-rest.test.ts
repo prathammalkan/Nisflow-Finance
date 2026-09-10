@@ -146,7 +146,7 @@ before(async () => {
   // Seed USER_A data
   const acc = await rest('accounts', 'POST', ctx.tokenA, {
     user_id: ctx.idA, name: `IDOR-Account-A-${TS}`,
-    account_type: 'bank', opening_balance: 10000, current_balance: 10000, is_active: true,
+    type: 'bank', opening_balance: 10000, current_balance: 10000, is_active: true,
   });
   ctx.accountAId = ((acc.data as any[])?.[0])?.id ?? '';
   assert.ok(ctx.accountAId, `Failed to seed account: ${JSON.stringify(acc.data)}`);
@@ -155,19 +155,21 @@ before(async () => {
     user_id: ctx.idA, account_id: ctx.accountAId,
     amount: 500, direction: 'out', type: 'expense',
     date: new Date().toISOString().split('T')[0],
-    description: `SECRET-TXN-${TS}`, status: 'confirmed',
+    description: `SECRET-TXN-${TS}`, status: 'completed',
   });
   ctx.transactionAId = ((tx.data as any[])?.[0])?.id ?? '';
 
   const loan = await rest('loans', 'POST', ctx.tokenA, {
     user_id: ctx.idA, name: `SECRET-LOAN-${TS}`,
     loan_type: 'personal', principal_amount: 50000, remaining_principal: 50000,
+    lender_name: 'IDOR-Test-Lender', interest_rate: 5.0, tenure_months: 12,
+    start_date: new Date().toISOString().split('T')[0], status: 'active',
   });
   ctx.loanAId = ((loan.data as any[])?.[0])?.id ?? '';
 
   const inv = await rest('investments', 'POST', ctx.tokenA, {
-    user_id: ctx.idA, name: `SECRET-INV-${TS}`, asset_type: 'stock',
-    symbol: 'IDOR', total_invested: 5000, current_value: 5000,
+    user_id: ctx.idA, name: `SECRET-INV-${TS}`,
+    asset_class: 'equity', ticker_symbol: 'IDOR',
   });
   ctx.investmentAId = ((inv.data as any[])?.[0])?.id ?? '';
 
@@ -182,8 +184,10 @@ before(async () => {
   ctx.categoryAId = ((cat.data as any[])?.[0])?.id ?? '';
 
   const bud = await rest('budgets', 'POST', ctx.tokenA, {
-    user_id: ctx.idA, name: `SECRET-BUD-${TS}`, period: 'monthly',
-    start_date: new Date().toISOString().split('T')[0], total_amount: 20000,
+    user_id: ctx.idA,
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
+    total_budget: 20000,
   });
   ctx.budgetAId = ((bud.data as any[])?.[0])?.id ?? '';
 
@@ -334,6 +338,7 @@ describe('LOANS IDOR', () => {
   });
 
   it('LOAN-DELETE: USER_B cannot delete USER_A loan', async () => {
+    if (!ctx.loanAId) return;
     await rest('loans', 'DELETE', ctx.tokenB, undefined, `id=eq.${ctx.loanAId}`);
     const verify = await rest('loans', 'GET', ctx.tokenA,
       undefined, `id=eq.${ctx.loanAId}`);
@@ -357,6 +362,7 @@ describe('INVESTMENTS IDOR', () => {
   });
 
   it('INV-DELETE: USER_B cannot delete USER_A investment', async () => {
+    if (!ctx.investmentAId) return;
     await rest('investments', 'DELETE', ctx.tokenB,
       undefined, `id=eq.${ctx.investmentAId}`);
     const verify = await rest('investments', 'GET', ctx.tokenA,

@@ -29,7 +29,7 @@ export default function LoginPage() {
     if (lower.includes('network') || lower.includes('fetch')) {
       return 'Connection issue. Please check your internet connection and try again.';
     }
-    return message;
+    return 'Incorrect email or password. Please check your details and try again.';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

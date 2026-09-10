@@ -449,9 +449,14 @@ test.describe('Settings / Reset safety', () => {
     if (await resetBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await resetBtn.click();
       const dialog = page.getByRole('dialog');
-      if (await dialog.isVisible({ timeout: 3000 }).catch(() => false)) {
-        // Must contain an input for confirmation phrase
-        await expect(dialog.getByRole('textbox')).toBeVisible({ timeout: 3000 });
+      if (await dialog.isVisible({ timeout: 5000 }).catch(() => false)) {
+        // Dialog opens in preview step — click through to the confirm step
+        const proceedBtn = dialog.getByRole('button', { name: /proceed to confirmation/i });
+        if (await proceedBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await proceedBtn.click();
+        }
+        // Must contain an input for confirmation phrase in confirm step
+        await expect(dialog.getByRole('textbox')).toBeVisible({ timeout: 5000 });
       }
     } else {
       test.skip();

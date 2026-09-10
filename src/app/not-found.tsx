@@ -11,9 +11,9 @@ export default function NotFound() {
 
         <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">404</h1>
-          <h2 className="text-xl font-semibold">Page Not Found</h2>
+          <h2 className="text-xl font-semibold">Route Unavailable</h2>
           <p className="text-sm text-muted-foreground">
-            The page or record you are looking for doesn't exist or may have been moved.
+            This route is unavailable or may have been moved. Please return to the dashboard.
           </p>
         </div>
 
