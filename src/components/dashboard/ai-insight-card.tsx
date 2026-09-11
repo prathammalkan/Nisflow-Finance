@@ -1,22 +1,26 @@
-"use client";
+﻿"use client";
 
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Sparkles, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { useState } from "react";
+import { Sparkles, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { cn } from "@/lib/utils";
 
-export function AiInsightCard() {
+interface AiInsightCardProps {
+  className?: string;
+}
+
+export function AiInsightCard({ className }: AiInsightCardProps) {
   const [insight, setInsight] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const generateInsight = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ai/insights', { method: 'POST' });
+      const res = await fetch("/api/ai/insights", { method: "POST" });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData?.error || `Request failed (${res.status})`);
@@ -25,70 +29,75 @@ export function AiInsightCard() {
       if (data.insight) {
         setInsight(data.insight);
         setHasGenerated(true);
+        setExpanded(true);
       } else {
-        throw new Error('No insight returned from AI.');
+        throw new Error("No insight returned from AI.");
       }
     } catch (e: any) {
-      console.error('Failed to generate insight', e);
-      setError(e?.message || 'Could not generate insight. Please try again.');
-      setHasGenerated(true); // show error state, not initial state
+      console.error("Failed to generate insight", e);
+      setError(e?.message || "Could not generate insight. Please try again.");
+      setHasGenerated(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <Card className="w-full border-primary/20 shadow-sm relative overflow-hidden">
-      <CardHeader className="pb-2 flex flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2 text-base text-primary">
-          <Sparkles className="h-4 w-4" aria-hidden="true" />
-          AI Financial Summary
-        </CardTitle>
-        {hasGenerated && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={generateInsight}
-            disabled={isLoading}
-            className="h-8 w-8 rounded-full"
-            title="Refresh insight"
-            aria-label="Refresh AI insight"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
+  // Quiet contextual entry point
+  if (!hasGenerated) {
+    return (
+      <button
+        onClick={generateInsight}
+        disabled={isLoading}
+        className={cn(
+          "flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors",
+          className
         )}
-      </CardHeader>
-      <CardContent>
-        {!hasGenerated ? (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 py-3">
-            <p className="text-sm text-muted-foreground flex-1">
-              Get a smart summary of your financial health this month based on your actual transactions.
-            </p>
-            <Button onClick={generateInsight} disabled={isLoading} variant="outline" size="sm" className="shrink-0 gap-2">
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Analyzing…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Get AI Summary
-                </>
-              )}
-            </Button>
-          </div>
-        ) : error ? (
-          <div className="flex items-start gap-2 py-3 text-sm text-muted-foreground">
-            <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-            <p>{error}</p>
-          </div>
+        aria-label="Generate AI financial summary"
+      >
+        {isLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-primary/60" />
         ) : (
-          <div className="prose prose-sm max-w-none text-muted-foreground prose-p:leading-relaxed prose-strong:text-foreground">
-            {insight ? <ReactMarkdown>{insight}</ReactMarkdown> : <p>Could not load insight.</p>}
-          </div>
+          <Sparkles className="h-4 w-4 text-primary/60" />
         )}
-      </CardContent>
-    </Card>
+        <span>{isLoading ? "Analyzing…" : "Ask NisFlow for a summary"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+        >
+          <Sparkles className="h-4 w-4" />
+          AI summary
+        </button>
+        <button
+          onClick={generateInsight}
+          disabled={isLoading}
+          className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          aria-label="Refresh AI insight"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="rounded-xl border border-border/60 bg-card p-4">
+          {error ? (
+            <div className="flex items-start gap-2 text-sm text-muted-foreground">
+              <AlertCircle className="h-4 w-4 text-caution mt-0.5 shrink-0" />
+              <p>{error}</p>
+            </div>
+          ) : insight ? (
+            <div className="prose prose-sm max-w-none text-muted-foreground prose-p:leading-relaxed prose-strong:text-foreground prose-p:my-1">
+              <ReactMarkdown>{insight}</ReactMarkdown>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }

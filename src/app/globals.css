@@ -31,50 +31,63 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* Core neutral palette — warm off-white */
+    --background: 40 30% 98%;
+    --foreground: 220 15% 16%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 220 15% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 152 76% 36%;
+    --popover-foreground: 220 15% 16%;
+
+    /* Primary — balanced green, toned down */
+    --primary: 152 55% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+
+    /* Secondary / muted surfaces */
+    --secondary: 220 14% 95%;
+    --secondary-foreground: 220 15% 25%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 10% 52%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 15% 20%;
+
+    /* Semantic */
+    --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 152 76% 36%;
-    --sidebar: 240 4.8% 98%;
-    --radius: 0.5rem;
+
+    /* Borders, inputs — very subtle */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 152 55% 36%;
+
+    /* Sidebar — slightly warmer than background */
+    --sidebar: 40 20% 97%;
+
+    /* Radius — rounded but not bubbly */
+    --radius: 0.625rem;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 152 76% 36%;
+    --background: 220 14% 10%;
+    --foreground: 210 20% 92%;
+    --card: 220 13% 13%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 13% 13%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 152 55% 42%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --secondary: 220 12% 18%;
+    --secondary-foreground: 210 15% 80%;
+    --muted: 220 12% 17%;
+    --muted-foreground: 220 8% 55%;
+    --accent: 220 12% 18%;
+    --accent-foreground: 210 20% 90%;
+    --destructive: 0 62% 42%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 152 76% 36%;
-    --sidebar: 240 10% 7%;
+    --border: 220 12% 22%;
+    --input: 220 12% 22%;
+    --ring: 152 55% 42%;
+    --sidebar: 220 14% 8%;
   }
 }
 
@@ -86,19 +99,40 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* PWA & Mobile Improvements */
+/* Finance semantic utility classes */
 @layer utilities {
-  /* Prevent body scroll when modal is open */
+  /* Income — muted green */
+  .text-income { color: hsl(152 55% 32%); }
+  .bg-income-surface { background-color: hsl(152 40% 94%); }
+
+  /* Expense — soft peach/coral */
+  .text-expense { color: hsl(12 60% 40%); }
+  .bg-expense-surface { background-color: hsl(12 55% 95%); }
+
+  /* Balance — soft lavender */
+  .text-balance { color: hsl(240 40% 42%); }
+  .bg-balance-surface { background-color: hsl(240 35% 95%); }
+
+  /* Caution — muted amber */
+  .text-caution { color: hsl(38 65% 36%); }
+  .bg-caution-surface { background-color: hsl(38 70% 95%); }
+
+  /* Risk — soft pink */
+  .text-risk { color: hsl(350 55% 42%); }
+  .bg-risk-surface { background-color: hsl(350 50% 95%); }
+
+  /* PWA & Mobile */
   .modal-open {
     overflow: hidden;
     position: fixed;
     width: 100%;
   }
   
-  /* Safe area support for iOS PWA */
   .safe-top {
     padding-top: env(safe-area-inset-top);
   }
@@ -106,25 +140,21 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
   
-  /* Momentum scrolling for iOS */
   .scroll-smooth-ios {
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
   }
   
-  /* Prevent text selection on interactive elements */
   .no-select {
     -webkit-user-select: none;
     user-select: none;
   }
   
-  /* Touch-friendly tap target minimum */
   .tap-target {
     min-height: 44px;
     min-width: 44px;
   }
 
-  /* Tabular numbers for financial values — prevents digit width jitter */
   .font-tabular-nums {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";

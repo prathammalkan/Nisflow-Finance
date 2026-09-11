@@ -29,25 +29,25 @@ export function EmptyState({
       role="region"
       aria-label={title}
       className={cn(
-        "flex min-h-[400px] flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center animate-in fade-in-50",
+        "flex min-h-[280px] flex-col items-center justify-center rounded-xl border border-dashed border-border/60 p-8 text-center",
         className
       )}
       {...props}
     >
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4" aria-hidden="true">
-        <Icon className="h-6 w-6 text-muted-foreground" />
+      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-muted mb-4" aria-hidden="true">
+        <Icon className="h-5 w-5 text-muted-foreground" />
       </div>
-      <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-      <p className="mt-2 mb-4 text-sm text-muted-foreground max-w-sm mx-auto">
+      <h3 className="text-base font-medium text-foreground">{title}</h3>
+      <p className="mt-1.5 mb-5 text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
         {description}
       </p>
       {actionLabel && actionHref && (
-        <Button asChild>
+        <Button asChild size="sm">
           <Link href={actionHref}>{actionLabel}</Link>
         </Button>
       )}
       {actionLabel && onAction && !actionHref && (
-        <Button onClick={onAction}>
+        <Button onClick={onAction} size="sm">
           {actionLabel}
         </Button>
       )}
