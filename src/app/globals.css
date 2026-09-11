@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", sans-serif;
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-display: "Syne", sans-serif;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -104,6 +105,13 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Syne for all headings — bold, geometric, editorial */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
 }
 
 @layer utilities {
@@ -117,6 +125,14 @@
   .bg-caution-surface { background-color: hsl(var(--finance-caution-surface)); }
   .text-risk          { color: hsl(var(--finance-risk)); }
   .bg-risk-surface    { background-color: hsl(var(--finance-risk-surface)); }
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  .font-body { font-family: var(--font-sans); }
   .modal-open { overflow: hidden; position: fixed; width: 100%; }
   .safe-top    { padding-top: env(safe-area-inset-top); }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
