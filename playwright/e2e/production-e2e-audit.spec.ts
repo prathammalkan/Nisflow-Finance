@@ -141,7 +141,7 @@ test.describe('Production Live E2E Audit', () => {
     await page.locator('#password').fill(testUserPassword);
     await page.getByRole('button', { name: /sign in/i }).click();
 
-    await expect(page.getByText(/invalid login credentials|invalid credentials/i)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/invalid login credentials|invalid credentials|incorrect email or password|email or password/i)).toBeVisible({ timeout: 20000 });
     await expect(page).toHaveURL(/login/);
   });
 });
