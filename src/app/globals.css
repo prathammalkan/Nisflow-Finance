@@ -2,7 +2,6 @@
 
 @theme {
   --font-sans: "Inter", sans-serif;
-  
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -23,7 +22,6 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
   --color-sidebar: hsl(var(--sidebar));
-  
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -31,70 +29,74 @@
 
 @layer base {
   :root {
-    /* Core neutral palette — warm off-white */
-    --background: 40 30% 98%;
-    --foreground: 220 15% 16%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 15% 16%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 16%;
-
-    /* Primary — balanced green, toned down */
-    --primary: 152 55% 36%;
+    --background:         38 35% 97%;
+    --foreground:         240 12% 12%;
+    --card:               0 0% 100%;
+    --card-foreground:    240 12% 12%;
+    --popover:            0 0% 100%;
+    --popover-foreground: 240 12% 12%;
+    --primary:            258 80% 58%;
     --primary-foreground: 0 0% 100%;
-
-    /* Secondary / muted surfaces */
-    --secondary: 220 14% 95%;
-    --secondary-foreground: 220 15% 25%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 52%;
-    --accent: 220 14% 94%;
-    --accent-foreground: 220 15% 20%;
-
-    /* Semantic */
-    --destructive: 0 72% 56%;
-    --destructive-foreground: 0 0% 98%;
-
-    /* Borders, inputs — very subtle */
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 152 55% 36%;
-
-    /* Sidebar — slightly warmer than background */
-    --sidebar: 40 20% 97%;
-
-    /* Radius — rounded but not bubbly */
-    --radius: 0.625rem;
+    --secondary:             258 20% 94%;
+    --secondary-foreground:  258 30% 30%;
+    --muted:                 240 15% 95%;
+    --muted-foreground:      240 8% 50%;
+    --accent:                258 30% 93%;
+    --accent-foreground:     258 40% 28%;
+    --destructive:            4 86% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border:  240 12% 90%;
+    --input:   240 12% 90%;
+    --ring:    258 80% 58%;
+    --sidebar: 38 25% 96%;
+    --radius:  0.875rem;
+    --finance-income:          152 70% 42%;
+    --finance-income-surface:  152 55% 94%;
+    --finance-expense:         10 80% 50%;
+    --finance-expense-surface: 10 70% 95%;
+    --finance-balance:         222 75% 50%;
+    --finance-balance-surface: 222 65% 95%;
+    --finance-caution:         38 85% 42%;
+    --finance-caution-surface: 38 80% 94%;
+    --finance-risk:            340 75% 48%;
+    --finance-risk-surface:    340 65% 95%;
   }
-
   .dark {
-    --background: 220 14% 10%;
-    --foreground: 210 20% 92%;
-    --card: 220 13% 13%;
-    --card-foreground: 210 20% 92%;
-    --popover: 220 13% 13%;
-    --popover-foreground: 210 20% 92%;
-    --primary: 152 55% 42%;
+    --background:         0 0% 0%;
+    --foreground:         0 0% 96%;
+    --card:               0 0% 5%;
+    --card-foreground:    0 0% 95%;
+    --popover:            0 0% 6%;
+    --popover-foreground: 0 0% 95%;
+    --primary:            258 90% 68%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 12% 18%;
-    --secondary-foreground: 210 15% 80%;
-    --muted: 220 12% 17%;
-    --muted-foreground: 220 8% 55%;
-    --accent: 220 12% 18%;
-    --accent-foreground: 210 20% 90%;
-    --destructive: 0 62% 42%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 12% 22%;
-    --input: 220 12% 22%;
-    --ring: 152 55% 42%;
-    --sidebar: 220 14% 8%;
+    --secondary:             258 15% 12%;
+    --secondary-foreground:  258 20% 75%;
+    --muted:                 0 0% 9%;
+    --muted-foreground:      0 0% 48%;
+    --accent:                258 20% 14%;
+    --accent-foreground:     258 30% 85%;
+    --destructive:            4 90% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --border:  0 0% 13%;
+    --input:   0 0% 13%;
+    --ring:    258 90% 68%;
+    --sidebar: 0 0% 0%;
+    --finance-income:          152 75% 52%;
+    --finance-income-surface:  152 55% 8%;
+    --finance-expense:         10 90% 62%;
+    --finance-expense-surface: 10 70% 9%;
+    --finance-balance:         222 85% 68%;
+    --finance-balance-surface: 222 65% 9%;
+    --finance-caution:         38 95% 60%;
+    --finance-caution-surface: 38 80% 9%;
+    --finance-risk:            340 85% 65%;
+    --finance-risk-surface:    340 65% 9%;
   }
 }
 
 @layer base {
-  * {
-    border-color: var(--color-border);
-  }
+  * { border-color: var(--color-border); }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
@@ -104,68 +106,28 @@
   }
 }
 
-/* Finance semantic utility classes */
 @layer utilities {
-  /* Income — muted green */
-  .text-income { color: hsl(152 55% 32%); }
-  .bg-income-surface { background-color: hsl(152 40% 94%); }
-
-  /* Expense — soft peach/coral */
-  .text-expense { color: hsl(12 60% 40%); }
-  .bg-expense-surface { background-color: hsl(12 55% 95%); }
-
-  /* Balance — soft lavender */
-  .text-balance { color: hsl(240 40% 42%); }
-  .bg-balance-surface { background-color: hsl(240 35% 95%); }
-
-  /* Caution — muted amber */
-  .text-caution { color: hsl(38 65% 36%); }
-  .bg-caution-surface { background-color: hsl(38 70% 95%); }
-
-  /* Risk — soft pink */
-  .text-risk { color: hsl(350 55% 42%); }
-  .bg-risk-surface { background-color: hsl(350 50% 95%); }
-
-  /* PWA & Mobile */
-  .modal-open {
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-  }
-  
-  .safe-top {
-    padding-top: env(safe-area-inset-top);
-  }
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  
-  .scroll-smooth-ios {
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: smooth;
-  }
-  
-  .no-select {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  
-  .tap-target {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  .font-tabular-nums {
-    font-variant-numeric: tabular-nums;
-    font-feature-settings: "tnum";
-  }
+  .text-income        { color: hsl(var(--finance-income)); }
+  .bg-income-surface  { background-color: hsl(var(--finance-income-surface)); }
+  .text-expense       { color: hsl(var(--finance-expense)); }
+  .bg-expense-surface { background-color: hsl(var(--finance-expense-surface)); }
+  .text-balance       { color: hsl(var(--finance-balance)); }
+  .bg-balance-surface { background-color: hsl(var(--finance-balance-surface)); }
+  .text-caution       { color: hsl(var(--finance-caution)); }
+  .bg-caution-surface { background-color: hsl(var(--finance-caution-surface)); }
+  .text-risk          { color: hsl(var(--finance-risk)); }
+  .bg-risk-surface    { background-color: hsl(var(--finance-risk-surface)); }
+  .modal-open { overflow: hidden; position: fixed; width: 100%; }
+  .safe-top    { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .scroll-smooth-ios { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+  .no-select { -webkit-user-select: none; user-select: none; }
+  .tap-target { min-height: 44px; min-width: 44px; }
+  .font-tabular-nums { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 }
 
-/* Respect user's reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -173,25 +135,8 @@
   }
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground));
-}
-
-/* Hide scrollbar on mobile for cleaner look */
-@media (max-width: 768px) {
-  ::-webkit-scrollbar {
-    display: none;
-  }
-}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+@media (max-width: 768px) { ::-webkit-scrollbar { display: none; } }
