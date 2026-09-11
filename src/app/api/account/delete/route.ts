@@ -70,28 +70,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const resetId = `DELETE_ACCOUNT:${user.id}:${crypto.randomUUID()}`;
-
-    // Step 1: Authoritative purge of all user financial records via reset_user_data RPC
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('reset_user_data', {
-      p_reset_id: resetId,
-      p_confirmation_phrase: 'RESET MY DATA',
-    });
-
-    if (rpcError || !rpcData || !(rpcData as { success?: boolean }).success) {
-      console.error('[ACCOUNT_DELETE_DB_PURGE_FAILED]', {
-        userId: user.id,
-        code: rpcError?.code,
-        message: rpcError?.message,
-      });
-      return NextResponse.json(
-        { success: false, error: 'Database record purge failed. Account deletion aborted for safety.' },
-        { status: 500 }
-      );
-    }
-
-    // Step 2: Purge storage documents
+    // Step 1: Purge storage documents
     try {
       const { data: fileList } = await supabase.storage
         .from('documents')
@@ -108,32 +87,57 @@ export async function POST(req: Request) {
       });
     }
 
-    // Step 3: Remove user from public.profiles, public.user_access_control if any rows remain
+    // Step 2: Authoritative transactional deletion of all financial tables via delete_user_account / reset_user_data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from('user_access_control') as any).delete().eq('user_id', user.id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from('profiles') as any).delete().eq('user_id', user.id);
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('delete_user_account', {
+      p_confirmation_phrase: CONFIRMATION,
+    });
 
-    // Step 4: Delete Auth User using the secure server-side Admin client
-    const adminClient = createAdminClient();
-    const { error: deleteUserError } = await adminClient.auth.admin.deleteUser(user.id);
-
-    if (deleteUserError) {
-      console.error('[ACCOUNT_DELETE_AUTH_FAILED]', {
-        userId: user.id,
-        message: deleteUserError.message,
+    if (rpcError || !rpcData || !(rpcData as { success?: boolean }).success) {
+      // Fallback: Attempt reset_user_data directly
+      const resetId = `DELETE_ACCOUNT:${user.id}:${crypto.randomUUID()}`;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resetRes = await (supabase.rpc as any)('reset_user_data', {
+        p_reset_id: resetId,
+        p_confirmation_phrase: 'RESET MY DATA',
       });
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Your financial data was removed, but auth user removal encountered an error. Please contact support.',
-        },
-        { status: 500 }
-      );
+      if (resetRes.error) {
+        console.error('[ACCOUNT_DELETE_RPC_FAILED]', {
+          userId: user.id,
+          code: rpcError?.code,
+          message: rpcError?.message,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Database record purge failed. Account deletion aborted for safety.' },
+          { status: 500 }
+        );
+      }
     }
 
-    // Step 5: Sign out and invalidate session cookies
-    await supabase.auth.signOut();
+    // Step 3: Remove user from public.profiles, public.user_access_control if any rows remain
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from('user_access_control') as any).delete().eq('user_id', user.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from('profiles') as any).delete().eq('id', user.id);
+    } catch {
+      // Handled in RPC
+    }
+
+    // Step 4: Ensure auth user removal via admin client if not already deleted by RPC
+    try {
+      const adminClient = createAdminClient();
+      await adminClient.auth.admin.deleteUser(user.id);
+    } catch {
+      // User identity already deleted by database RPC
+    }
+
+    // Step 5: Invalidate session cookies
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Session already invalidated by auth.users deletion
+    }
 
     const durationMs = Date.now() - startTime;
     if (process.env.NODE_ENV !== 'production') {

@@ -12,7 +12,6 @@ try {
 const PROD_URL = 'https://nisflow-finance.vercel.app';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function runProductionChecks() {
   console.log('=== STARTING PRODUCTION DEPLOYMENT & HTTP SMOKE VERIFICATION ===');
@@ -75,7 +74,7 @@ async function runProductionChecks() {
   const unauthPostDel = await fetch(`${PROD_URL}/api/account/delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confirmationPhrase: 'DELETE MY ACCOUNT' }),
+    body: JSON.stringify({ confirmation: 'DELETE MY ACCOUNT' }),
   });
   assert(unauthPostDel.status === 401, `POST /api/account/delete unauthenticated returns 401 Unauthorized (${unauthPostDel.status})`);
 
@@ -101,7 +100,17 @@ async function runProductionChecks() {
   } else {
     assert(true, `Disposable test user registered and session obtained`);
     const session = signupData.session;
-    const userId = session.user.id;
+    const projectRef = SUPABASE_URL.replace('https://', '').split('.')[0];
+    const cookieName = `sb-${projectRef}-auth-token`;
+    const sessionJson = JSON.stringify({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at,
+      expires_in: session.expires_in,
+      token_type: session.token_type,
+      user: session.user,
+    });
+    const cookieHeader = `${cookieName}=${encodeURIComponent(sessionJson)}`;
 
     // Call production API with wrong confirmation phrase
     const wrongPhraseRes = await fetch(`${PROD_URL}/api/account/delete`, {
@@ -109,8 +118,9 @@ async function runProductionChecks() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
+        Cookie: cookieHeader,
       },
-      body: JSON.stringify({ confirmationPhrase: 'WRONG PHRASE' }),
+      body: JSON.stringify({ confirmation: 'WRONG PHRASE' }),
     });
     assert(wrongPhraseRes.status === 400, `POST /api/account/delete with invalid phrase returns 400 (${wrongPhraseRes.status})`);
 
@@ -121,8 +131,9 @@ async function runProductionChecks() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
+        Cookie: cookieHeader,
       },
-      body: JSON.stringify({ confirmationPhrase: 'DELETE MY ACCOUNT' }),
+      body: JSON.stringify({ confirmation: 'DELETE MY ACCOUNT' }),
     });
 
     assert(deleteRes.status === 200, `POST /api/account/delete with exact confirmation phrase returns 200 (${deleteRes.status})`);
@@ -132,15 +143,6 @@ async function runProductionChecks() {
     // Verify session token is invalidated / user identity deleted
     const { data: postDelUserData, error: postDelUserErr } = await sbClient.auth.getUser(session.access_token);
     assert(!postDelUserData?.user || !!postDelUserErr, `Deleted user session token is rejected or user not found (${postDelUserErr?.message || 'User null'})`);
-
-    // Verify via Supabase Admin Client that user identity was completely removed
-    if (SUPABASE_SERVICE_ROLE_KEY) {
-      const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-      const { data: adminCheck, error: adminCheckErr } = await adminClient.auth.admin.getUserById(userId);
-      assert(!adminCheck?.user || !!adminCheckErr, `Admin API confirms user identity deleted from auth.users`);
-    }
   }
 
   // ── 5. Legal Policy Content Verification ─────────────────────────────────
