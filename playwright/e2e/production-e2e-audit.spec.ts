@@ -114,10 +114,11 @@ test.describe('Production Live E2E Audit', () => {
 
     const deleteDialog = page.getByRole('dialog');
     await expect(deleteDialog).toBeVisible({ timeout: 10000 });
-    await expect(deleteDialog.getByText(/permanently delete your account/i)).toBeVisible({ timeout: 10000 });
+    // DialogDescription text
+    await expect(deleteDialog.getByText(/permanently delete your nisflow account/i)).toBeVisible({ timeout: 10000 });
 
-    // Step 1: Proceed to Confirmation Phrase
-    const proceedBtn = deleteDialog.getByRole('button', { name: /proceed to confirmation/i });
+    // Step 1: Continue to Confirmation
+    const proceedBtn = deleteDialog.getByRole('button', { name: /i understand, continue to confirmation/i });
     await expect(proceedBtn).toBeVisible({ timeout: 10000 });
     await proceedBtn.click();
 
@@ -126,7 +127,7 @@ test.describe('Production Live E2E Audit', () => {
     await expect(phraseInput).toBeVisible({ timeout: 10000 });
     await phraseInput.fill('DELETE MY ACCOUNT');
 
-    const confirmDeleteBtn = deleteDialog.getByRole('button', { name: /permanently delete account/i });
+    const confirmDeleteBtn = deleteDialog.getByRole('button', { name: /permanently delete my account/i });
     await expect(confirmDeleteBtn).toBeEnabled({ timeout: 5000 });
     await confirmDeleteBtn.click();
 
