@@ -62,9 +62,10 @@ interface TransactionFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transaction?: TransactionRow | null;
+  defaultType?: 'Expense' | 'Income' | 'Transfer';
 }
 
-export function TransactionForm({ open, onOpenChange, transaction }: TransactionFormProps) {
+export function TransactionForm({ open, onOpenChange, transaction, defaultType = 'Expense' }: TransactionFormProps) {
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   
@@ -78,7 +79,7 @@ export function TransactionForm({ open, onOpenChange, transaction }: Transaction
   const form = useForm<any>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      type: 'Expense',
+      type: defaultType || 'Expense',
       amount: '',
       account_id: '',
       date: format(new Date(), 'yyyy-MM-dd'),
@@ -113,7 +114,7 @@ export function TransactionForm({ open, onOpenChange, transaction }: Transaction
       }
     } else if (!transaction && open) {
       form.reset({
-        type: 'Expense',
+        type: defaultType || 'Expense',
         amount: '',
         account_id: '',
         category_id: '',
@@ -126,7 +127,7 @@ export function TransactionForm({ open, onOpenChange, transaction }: Transaction
       });
       setIsAdvanced(false);
     }
-  }, [transaction, open, form]);
+  }, [transaction, open, defaultType, form]);
 
   const transactionType = form.watch('type');
 

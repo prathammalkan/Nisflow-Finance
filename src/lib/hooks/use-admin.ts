@@ -34,7 +34,7 @@ export interface AuditLogEntry {
  * Returns the current user's access status and admin flag.
  * Used by AccessGate and the admin page to gate content.
  */
-export function useAccessStatus() {
+export function useAccessStatus(initialData?: { status: 'pending' | 'approved' | 'suspended'; is_admin: boolean }) {
   const supabase = createClient();
 
   return useQuery({
@@ -51,7 +51,8 @@ export function useAccessStatus() {
       }
       return data as { status: 'pending' | 'approved' | 'suspended'; is_admin: boolean };
     },
-    staleTime: 30_000,
+    initialData,
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 30_000, // Poll every 30s so pending users auto-unblock on approval
     retry: 1,
   });

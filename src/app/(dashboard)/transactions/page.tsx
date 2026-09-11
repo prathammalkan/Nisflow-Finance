@@ -184,7 +184,7 @@ export default function TransactionsPage() {
                             : ""}
                           {formatINR(new Decimal(tx.amount || 0))}
                         </span>
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <TransactionRowActions transaction={tx} />
                         </div>
                       </div>

@@ -163,6 +163,10 @@ export default function TaxCalculatorPage() {
                   </div>
                 </div>
               )}
+              {/* Tax Disclaimer */}
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground leading-relaxed">
+                <span className="font-semibold text-foreground">Disclaimer:</span> This tax calculator is provided solely for informational and estimation purposes based on general Indian Income Tax slabs for FY 2025-26. It does not constitute certified tax or financial advice. Consult a qualified Chartered Accountant (CA) or tax professional for actual tax filing and exemptions.
+              </div>
             </>
           )}
         </div>

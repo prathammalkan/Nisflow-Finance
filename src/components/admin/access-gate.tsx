@@ -95,8 +95,14 @@ export function SuspendedAccountScreen() {
  * Relies on useAccessStatus's built-in 30-second polling — no manual
  * timer needed here.
  */
-export function AccessGate({ children }: { children: React.ReactNode }) {
-  const { data: accessStatus, isLoading } = useAccessStatus();
+export function AccessGate({
+  children,
+  initialStatus,
+}: {
+  children: React.ReactNode;
+  initialStatus?: { status: 'pending' | 'approved' | 'suspended'; is_admin: boolean };
+}) {
+  const { data: accessStatus, isLoading } = useAccessStatus(initialStatus);
 
   if (isLoading) {
     return (

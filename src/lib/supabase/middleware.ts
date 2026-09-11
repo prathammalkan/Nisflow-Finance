@@ -35,13 +35,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Allow GET /api/account/reset-data through unauthenticated so the route handler
-  // can return the correct HTTP 405 Method Not Allowed (destructive endpoint is POST-only).
+  // Allow GET /api/account/reset-data and GET /api/account/delete through unauthenticated
+  // so the route handler can return the correct HTTP 405 Method Not Allowed (destructive endpoints are POST-only).
   // Security: POST still requires auth; GET is explicitly rejected by the route handler.
   if (
     !user &&
     request.method === 'GET' &&
-    request.nextUrl.pathname === '/api/account/reset-data'
+    (request.nextUrl.pathname === '/api/account/reset-data' ||
+     request.nextUrl.pathname === '/api/account/delete')
   ) {
     return supabaseResponse;
   }
@@ -51,7 +52,9 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
     !request.nextUrl.pathname.startsWith('/register') &&
-    !request.nextUrl.pathname.startsWith('/auth')
+    !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/privacy') &&
+    !request.nextUrl.pathname.startsWith('/terms')
   ) {
     // NEVER redirect API requests to an HTML login page — return a 401 JSON error
     if (request.nextUrl.pathname.startsWith('/api')) {

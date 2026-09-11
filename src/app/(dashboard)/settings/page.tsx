@@ -11,8 +11,10 @@ import { exportFullUserBackupJSON, exportFullUserBackupSQL } from '@/lib/export-
 import { useBiometricLock } from '@/lib/hooks/use-biometric-lock';
 import { useWebNotifications } from '@/lib/hooks/use-web-notifications';
 import { useProfile, useUpdateProfile } from '@/lib/hooks/use-profile';
-import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2, Smartphone, Share2, MoreVertical, PlusSquare, Laptop, AlertTriangle } from 'lucide-react';
+import { Download, Database, Fingerprint, Bell, Shield, Lock, FileCode, CheckCircle2, User, Loader2, Smartphone, Share2, MoreVertical, PlusSquare, Laptop, AlertTriangle, Scale, FileText, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 import { ResetDataModal } from '@/components/settings/reset-data-modal';
+import { DeleteAccountModal } from '@/components/settings/delete-account-modal';
 
 export default function SettingsPage() {
   const currentDate = new Date();
@@ -440,7 +442,58 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* 5. Danger Zone (Destructive Factory Reset) */}
+      {/* 5. Legal, Policies & Transparency */}
+      <section className="bg-card text-card-foreground p-6 rounded-xl border shadow-sm space-y-4">
+        <div className="flex items-center gap-3 border-b pb-4">
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <Scale className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold">Legal, Privacy & Compliance</h2>
+            <p className="text-sm text-muted-foreground">Review our terms of service, privacy practices, and regulatory disclaimers.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <Link
+            href="/privacy"
+            className="flex items-center justify-between p-4 rounded-lg border bg-muted/20 hover:bg-muted/40 transition-colors group"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                <Shield className="h-4 w-4 text-primary" />
+                Privacy Policy
+              </div>
+              <p className="text-xs text-muted-foreground">
+                How we store your financial records, use Google Gemini AI, and handle data sovereignty.
+              </p>
+            </div>
+            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 ml-2" />
+          </Link>
+
+          <Link
+            href="/terms"
+            className="flex items-center justify-between p-4 rounded-lg border bg-muted/20 hover:bg-muted/40 transition-colors group"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+                <FileText className="h-4 w-4 text-primary" />
+                Terms & Conditions
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Service agreement, non-advisory financial disclaimer, and acceptable use terms.
+              </p>
+            </div>
+            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 ml-2" />
+          </Link>
+        </div>
+
+        <div className="p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground border">
+          <span className="font-semibold text-foreground">Regulatory Notice:</span> NisFlow Finance is a personal double-entry ledger and financial management tool. It is not an authorized banking institution, SEBI-registered investment advisor, or licensed chartered accountant. All calculations and AI outputs are for informational estimation.
+        </div>
+      </section>
+
+      {/* 6. Danger Zone (Destructive Operations) */}
       <section className="bg-destructive/5 text-card-foreground p-6 rounded-xl border border-destructive/30 shadow-sm space-y-4">
         <div className="flex items-center gap-3 border-b border-destructive/20 pb-4">
           <div className="rounded-lg bg-destructive/10 p-2.5 text-destructive">
@@ -452,15 +505,31 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg border border-destructive/20 bg-background">
-          <div className="space-y-1">
-            <h3 className="font-semibold text-sm text-foreground">Reset All Financial Data</h3>
-            <p className="text-xs text-muted-foreground max-w-xl">
-              Permanently purges all financial accounts, transactions, double-entry ledger journals, loans, investments, documents, and budgets while preserving your login authentication and profile identity.
-            </p>
+        <div className="space-y-4">
+          {/* Reset Financial Data */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg border border-destructive/20 bg-background">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-sm text-foreground">Reset All Financial Data</h3>
+              <p className="text-xs text-muted-foreground max-w-xl">
+                Permanently purges all financial accounts, transactions, double-entry ledger journals, loans, investments, documents, and budgets while preserving your login authentication and profile identity.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <ResetDataModal />
+            </div>
           </div>
-          <div className="shrink-0">
-            <ResetDataModal />
+
+          {/* Delete Account */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg border border-destructive/20 bg-background">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-sm text-destructive">Delete Account</h3>
+              <p className="text-xs text-muted-foreground max-w-xl">
+                Permanently deletes your NisFlow user identity, Supabase authentication credentials, profile, and all associated financial records, ledgers, and documents. This operation is completely irreversible.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <DeleteAccountModal />
+            </div>
           </div>
         </div>
       </section>

@@ -8,7 +8,7 @@ export function useImportStatement() {
   
   return useMutation({
     mutationFn: async (fileData: any) => {
-      // Mock logic for uploading file, parsing should be handled in the component
+      // Pass-through file data; parsing and validation handled in import workflow
       return fileData;
     }
   });

@@ -60,4 +60,6 @@ service-account*.json
 # Playwright auth state (contains session cookies - never commit)
 playwright/.auth/user.json
 playwright-report/
+playwright-screenshots/
 test-results/
+test-output.txt

@@ -153,3 +153,10 @@ export async function checkPreviewRateLimit(userId: string, req: Request): Promi
   const identifier = `${userId}:${ip}`;
   return limitRequest('reset_data_preview', identifier, 20, 60);
 }
+
+// 6. Account Deletion Limiter: 3 requests per 10 minutes (600s) per user
+export async function checkDeleteAccountRateLimit(userId: string, req: Request): Promise<RateLimitResult> {
+  const ip = getClientIp(req);
+  const identifier = `${userId}:${ip}`;
+  return limitRequest('delete_account', identifier, 3, 600);
+}
