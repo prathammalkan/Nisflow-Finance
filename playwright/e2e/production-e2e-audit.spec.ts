@@ -74,27 +74,29 @@ test.describe('Production Live E2E Audit', () => {
     await expect(page.getByRole('button', { name: /add|new/i }).first()).toBeVisible({ timeout: 15000 });
 
     // ── 5. Financial Sections Audit ─────────────────────────────────────────────
-    // Plan / Budgets
-    await page.goto('/plan', { waitUntil: 'domcontentloaded' });
+    // Plan/Spending (route is /spending, h1 = "Plan")
+    await page.goto('/spending', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 20000 });
-    await expect(page).toHaveURL(/plan/);
-    await expect(page.getByRole('heading', { name: /plan|budget/i }).first()).toBeVisible({ timeout: 20000 });
+    await expect(page).toHaveURL(/spending/);
+    await expect(page.getByRole('heading', { name: /plan/i }).first()).toBeVisible({ timeout: 20000 });
 
-    // Insights / Analytics
+    // Insights / Analytics (route is /insights, h1 = "Insights")
     await page.goto('/insights', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 20000 });
     await expect(page).toHaveURL(/insights/);
-    await expect(page.getByRole('heading', { name: /insight|analytics/i }).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('heading', { name: /insights/i }).first()).toBeVisible({ timeout: 20000 });
 
-    // Investments
+    // Investments (route is /investments, h1 = "Investments & SIPs")
     await page.goto('/investments', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 20000 });
     await expect(page).toHaveURL(/investments/);
+    await expect(page.getByRole('heading', { name: /investments/i }).first()).toBeVisible({ timeout: 20000 });
 
-    // Loans
+    // Loans (route is /loans, h1 = "Loans & EMIs")
     await page.goto('/loans', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 20000 });
     await expect(page).toHaveURL(/loans/);
+    await expect(page.getByRole('heading', { name: /loans/i }).first()).toBeVisible({ timeout: 20000 });
 
     // ── 6. Settings, Legal Discoverability, and Danger Zone ──────────────────────
     await page.goto('/settings', { waitUntil: 'domcontentloaded' });
