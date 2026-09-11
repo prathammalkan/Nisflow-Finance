@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createClient as createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { checkDeleteAccountRateLimit } from '@/lib/security/rate-limit';
 
 const CONFIRMATION = 'DELETE MY ACCOUNT';
@@ -8,13 +9,31 @@ export async function POST(req: Request) {
   const startTime = Date.now();
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    const authHeader = req.headers.get('authorization');
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
-    if (authError || !user) {
+    let supabase = await createServerClient();
+    let user = (await supabase.auth.getUser()).data.user;
+
+    // Fallback: If no cookie session, check for Authorization: Bearer <token>
+    if (!user && bearerToken) {
+      const tokenClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+        {
+          global: { headers: { Authorization: `Bearer ${bearerToken}` } },
+          auth: { persistSession: false, autoRefreshToken: false },
+        }
+      );
+      const { data: tokenUserData } = await tokenClient.auth.getUser(bearerToken);
+      if (tokenUserData?.user) {
+        user = tokenUserData.user;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase = tokenClient as any;
+      }
+    }
+
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
     }
 
@@ -43,7 +62,8 @@ export async function POST(req: Request) {
     }
 
     const input = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-    if (input.confirmation !== CONFIRMATION) {
+    const confirmation = (input.confirmation || input.confirmationPhrase) as string | undefined;
+    if (confirmation !== CONFIRMATION) {
       return NextResponse.json(
         { error: `Type "${CONFIRMATION}" exactly to confirm account deletion.` },
         { status: 400 }

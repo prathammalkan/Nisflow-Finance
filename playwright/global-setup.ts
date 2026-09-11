@@ -102,10 +102,10 @@ async function globalSetup(config: FullConfig) {
     {
       name: cookieName,
       value: encodeURIComponent(sessionJson),
-      domain: 'localhost',
+      domain: new URL(BASE_URL).hostname,
       path: '/',
       httpOnly: false,
-      secure: false,
+      secure: BASE_URL.startsWith('https'),
       sameSite: 'Lax',
     },
   ]);
