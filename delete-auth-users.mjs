@@ -1,4 +1,4 @@
-﻿import { readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -18,11 +18,11 @@ const TEST_USER_EMAILS = ['e2e-test-user@nisflow.test', 'e2e-test-user2@nisflow.
 
 const headers = {
   'apikey': SERVICE_KEY,
-  'Authorization': Bearer +${SERVICE_KEY},
+  'Authorization': `Bearer ${SERVICE_KEY}`,
   'Content-Type': 'application/json',
 };
 
-const res = await fetch(${SUPA_URL}/auth/v1/admin/users?page=1&per_page=1000, { headers });
+const res = await fetch(`${SUPA_URL}/auth/v1/admin/users?page=1&per_page=1000`, { headers });
 if (!res.ok) { const t = await res.text(); console.error('List failed ' + res.status + ': ' + t); process.exit(1); }
 const json = await res.json();
 const users = json.users ?? json;
@@ -32,7 +32,7 @@ let deleted = 0, skipped = 0, failed = 0;
 for (const user of users) {
   const email = user.email ?? '(no email)';
   if (KEEP_TEST_USERS && TEST_USER_EMAILS.includes(email)) { console.log('  - Keeping: ' + email); skipped++; continue; }
-  const dr = await fetch(${SUPA_URL}/auth/v1/admin/users/, { method: 'DELETE', headers });
+  const dr = await fetch(`${SUPA_URL}/auth/v1/admin/users/${user.id}`, { method: 'DELETE', headers });
   if (dr.status === 200 || dr.status === 204) { console.log('  deleted: ' + email); deleted++; }
   else { const t = await dr.text(); console.error('  FAILED ' + email + ': ' + dr.status + ' ' + t); failed++; }
 }

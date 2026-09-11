@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -65,7 +65,7 @@ export default function TransactionsPage() {
     <div className="flex-1 max-w-2xl mx-auto w-full space-y-0 pb-24 md:pb-6">
       {/* Page header */}
       <div className="sticky top-12 z-20 bg-background/95 backdrop-blur-sm border-b border-border/60 px-0 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Activity</h1>
+        <h1 className="text-lg font-semibold" aria-label="Transactions">Activity</h1>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
