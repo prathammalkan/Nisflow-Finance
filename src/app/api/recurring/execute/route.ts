@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { calculateNextDueDate } from '@/lib/hooks/use-recurring';
-import Decimal from 'decimal.js';
 import { format, parseISO } from 'date-fns';
 import crypto from 'node:crypto';
 import { recordFinancialTransaction } from '@/lib/ledger/service';
@@ -34,10 +33,10 @@ export async function POST(req: NextRequest) {
     let targetUserId: string | null = null;
 
     if (isCronAuthorized) {
-      // Server-side scheduled execution using isolated admin client to process system-wide due rules
+      // Server-side scheduled execution using isolated admin client
       dbClient = createAdminClient();
     } else {
-      // Regular user execution using standard user session and client RLS
+      // Regular user execution via RLS
       const userSupabase = await createClient();
       const { data: userData, error: authError } = await userSupabase.auth.getUser();
 
@@ -51,14 +50,14 @@ export async function POST(req: NextRequest) {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // 1. Fetch due active recurring rules
+    // Fetch active recurring rules due today or overdue
+    // DB columns: status (text), next_date (timestamptz)
     let query = dbClient
       .from('recurring_transactions')
       .select('*')
-      .eq('is_active', true)
-      .lte('next_due_date', todayStr);
+      .eq('status', 'active')
+      .lte('next_date', todayStr);
 
-    // If regular authenticated user, filter strictly by their verified auth session user_id
     if (targetUserId) {
       query = query.eq('user_id', targetUserId);
     }
@@ -76,53 +75,46 @@ export async function POST(req: NextRequest) {
     const skippedIds: string[] = [];
 
     for (const rule of dueRules) {
-      const occurrenceRef = `REC:${rule.id}:${rule.next_due_date}`;
+      const occurrenceRef = `REC:${rule.id}:${rule.next_date}`;
 
-      // Idempotency check: verify if a transaction with this deterministic key was already recorded
+      // Idempotency: check if already recorded via reference_id
       const { data: existingTx } = await (dbClient.from('transactions') as any)
         .select('id')
         .eq('user_id', rule.user_id)
-        .eq('bank_reference', occurrenceRef)
+        .eq('reference_id', occurrenceRef)
         .limit(1);
 
       if (existingTx && existingTx.length > 0) {
-        // Already recorded — advance next_due_date to avoid getting stuck
-        const nextDue = calculateNextDueDate(parseISO(rule.next_due_date), rule.frequency);
-        const isPastEnd = rule.end_date && nextDue > parseISO(rule.end_date);
-
+        // Already recorded — advance next_date to avoid getting stuck
+        const nextDue = calculateNextDueDate(parseISO(rule.next_date), rule.frequency);
         await (dbClient.from('recurring_transactions') as any)
-          .update({
-            next_due_date: format(nextDue, 'yyyy-MM-dd'),
-            last_created_date: todayStr,
-            is_active: isPastEnd ? false : rule.is_active,
-            updated_at: new Date().toISOString(),
-          })
+          .update({ next_date: format(nextDue, "yyyy-MM-dd'T'HH:mm:ssxxx") })
           .eq('id', rule.id);
 
         skippedIds.push(rule.id);
         continue;
       }
 
-      // Insert transaction into NisFlow double-entry ledger
-      const recType = (rule.type || 'expense').toLowerCase() === 'transfer' ? 'transfer' : (rule.direction === 'in' ? 'income' : 'expense');
-      
+      const recType = (() => {
+        const t = (rule.type || '').toLowerCase();
+        if (t === 'transfer') return 'transfer';
+        if (rule.direction === 'in') return 'income';
+        return 'expense';
+      })();
+
       const ledgerResult = await recordFinancialTransaction(dbClient as any, {
         userId: rule.user_id,
         type: recType,
         accountId: rule.account_id,
         categoryId: rule.category_id,
-        counterpartyId: rule.counterparty_id,
         description: rule.description,
         amount: rule.amount,
-        date: rule.next_due_date,
+        date: rule.next_date ? rule.next_date.split('T')[0] : todayStr,
         idempotencyKey: occurrenceRef,
         sourceType: 'recurring',
         sourceId: rule.id,
-        notes: rule.notes ? `[Recurring] ${rule.notes}` : '[Recurring scheduled transaction]',
-        metadata: {
-          ownership: rule.ownership || 'personal',
-          frequency: rule.frequency,
-        }
+        notes: '[Recurring scheduled transaction]',
+        metadata: { frequency: rule.frequency },
       });
 
       if (!ledgerResult.success) {
@@ -130,17 +122,10 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Advance next_due_date safely
-      const nextDue = calculateNextDueDate(parseISO(rule.next_due_date), rule.frequency);
-      const isPastEnd = rule.end_date && nextDue > parseISO(rule.end_date);
-
+      // Advance next_date by one frequency period
+      const nextDue = calculateNextDueDate(parseISO(rule.next_date), rule.frequency);
       await (dbClient.from('recurring_transactions') as any)
-        .update({
-          next_due_date: format(nextDue, 'yyyy-MM-dd'),
-          last_created_date: todayStr,
-          is_active: isPastEnd ? false : rule.is_active,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ next_date: format(nextDue, "yyyy-MM-dd'T'HH:mm:ssxxx") })
         .eq('id', rule.id);
 
       processedIds.push(rule.id);

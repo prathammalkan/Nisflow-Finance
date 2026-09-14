@@ -59,9 +59,10 @@ export default function InvestmentsPage() {
           const rawCurrent = inv.current_value ?? rawInvested;
           const currentValNum = new Decimal(rawCurrent).toNumber();
 
-          // Aggregate cash flows for XIRR
+          // Aggregate cash flows from investment_transactions for XIRR
+          // DB column is transaction_date, not date
           const txFlows = inv.investment_transactions?.map((tx: any) => ({
-             date: new Date(tx.date),
+             date: new Date(tx.transaction_date || tx.date),
              amount: tx.type === 'buy' ? -Number(tx.amount) : Number(tx.amount)
           })) || [];
           

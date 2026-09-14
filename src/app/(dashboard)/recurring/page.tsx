@@ -33,21 +33,30 @@ export default function RecurringPage() {
   const thisMonth = today.getMonth();
   const thisYear = today.getFullYear();
 
+  // next_date is the actual DB column (timestamptz)
   const upcomingThisMonth = (items || []).filter((r: any) => {
-    const d = parseISO(r.next_due_date);
+    if (!r.next_date) return false;
+    const d = parseISO(r.next_date);
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
   });
 
   const totalThisMonth = upcomingThisMonth.reduce((sum: Decimal, r: any) =>
     sum.plus(new Decimal(r.amount || 0)), new Decimal(0));
 
-  const overdueCount = (items || []).filter((r: any) =>
-    isPast(parseISO(r.next_due_date)) && !isToday(parseISO(r.next_due_date))).length;
+  const overdueCount = (items || []).filter((r: any) => {
+    if (!r.next_date) return false;
+    const d = parseISO(r.next_date);
+    return isPast(d) && !isToday(d);
+  }).length;
 
-  const dueNowCount = (items || []).filter((r: any) =>
-    isPast(parseISO(r.next_due_date)) || isToday(parseISO(r.next_due_date))).length;
+  const dueNowCount = (items || []).filter((r: any) => {
+    if (!r.next_date) return false;
+    const d = parseISO(r.next_date);
+    return isPast(d) || isToday(d);
+  }).length;
 
-  function getDueBadge(dateStr: string) {
+  function getDueBadge(dateStr: string | null) {
+    if (!dateStr) return null;
     const d = parseISO(dateStr);
     if (isPast(d) && !isToday(d)) return { label: 'Overdue', cls: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' };
     if (isToday(d)) return { label: 'Due Today', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' };
@@ -125,7 +134,7 @@ export default function RecurringPage() {
       ) : (
         <div className="space-y-3">
           {(items || []).map((r: any) => {
-            const badge = getDueBadge(r.next_due_date);
+            const badge = getDueBadge(r.next_date);
             const amount = new Decimal(r.amount || 0);
             return (
               <div
@@ -160,13 +169,15 @@ export default function RecurringPage() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3 mt-1 text-xs">
-                    <span className={cn('font-semibold text-sm', r.type === 'income' ? 'text-emerald-600' : 'text-rose-600')}>
-                      {r.type === 'income' ? '+' : '-'}{formatINR(amount)}
+                    <span className={cn('font-semibold text-sm', r.direction === 'in' ? 'text-emerald-600' : 'text-rose-600')}>
+                      {r.direction === 'in' ? '+' : '-'}{formatINR(amount)}
                     </span>
                     {r.account?.name && <span className="text-muted-foreground">{r.account.name}</span>}
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Next: {format(parseISO(r.next_due_date), 'dd MMM yyyy')}
-                    </span>
+                    {r.next_date && (
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> Next: {format(parseISO(r.next_date), 'dd MMM yyyy')}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

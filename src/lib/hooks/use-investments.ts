@@ -53,24 +53,18 @@ export function useCreateInvestment() {
       ticker?: string;
       type: string;
       platform?: string;
-      units?: number;
-      avg_purchase_price?: number;
-      current_value: number;
     }) => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('Not authenticated');
 
+      // investments table actual columns: id, user_id, name, ticker_symbol, asset_class, platform, created_at
       const { data, error } = await (supabase.from('investments') as any)
         .insert({
           user_id: userData.user.id,
           name: payload.name,
-          symbol: payload.ticker || null,
-          asset_type: payload.type,
-          broker: payload.platform || null,
-          quantity: payload.units || 0,
-          total_invested: payload.current_value || 0,
-          current_value: payload.current_value || 0,
-          purchase_price: payload.avg_purchase_price || null,
+          ticker_symbol: payload.ticker || null,
+          asset_class: payload.type || null,
+          platform: payload.platform || null,
         })
         .select()
         .single();
@@ -81,8 +75,6 @@ export function useCreateInvestment() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['investments'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['net-worth-history'] });
-      queryClient.invalidateQueries({ queryKey: ['report-investment'] });
     },
   });
 }
@@ -148,20 +140,16 @@ export function useCreateInvestmentTransaction() {
         }
       }
 
-      // 2. Insert transaction into investment_transactions projection
+      // 2. Insert transaction into investment_transactions
+      // Actual columns: id, investment_id, type, amount, quantity, price, transaction_date, created_at
       const txPayload = {
         id: txId,
-        user_id: userData.user.id,
         investment_id: transaction.investment_id,
         type: transaction.type,
-        date: transaction.date,
+        transaction_date: transaction.date || new Date().toISOString().split('T')[0],
         amount: txAmountDec.toNumber(),
         quantity: transaction.quantity ? new Decimal(transaction.quantity).toNumber() : null,
         price: transaction.price ? new Decimal(transaction.price).toNumber() : null,
-        fees: new Decimal(transaction.fees || 0).toNumber(),
-        taxes: new Decimal(transaction.taxes || 0).toNumber(),
-        account_id: transaction.account_id || null,
-        notes: journalEntryId ? `${transaction.notes || ''} [Ledger: ${journalEntryId}]`.trim() : transaction.notes || null,
       };
 
       const { data: insertedTx, error: txError } = await (supabase.from('investment_transactions') as any)
@@ -170,51 +158,6 @@ export function useCreateInvestmentTransaction() {
         .single();
 
       if (txError) throw txError;
-
-      // 2. Fetch current holding to update invested amount & units
-      const { data: inv, error: invError } = await (supabase.from('investments') as any)
-        .select('*')
-        .eq('id', transaction.investment_id)
-        .eq('user_id', userData.user.id)
-        .single();
-
-      if (!invError && inv) {
-        const currentInvested = new Decimal(inv.total_invested || inv.invested_amount || 0);
-        const currentQty = new Decimal(inv.quantity || inv.units || 0);
-        const txAmount = new Decimal(transaction.amount || 0);
-        const txQty = new Decimal(transaction.quantity || 0);
-
-        let newInvested = currentInvested;
-        let newQty = currentQty;
-
-        if (transaction.type === 'buy') {
-          newInvested = currentInvested.plus(txAmount);
-          if (transaction.quantity) {
-            newQty = currentQty.plus(txQty);
-          }
-        } else if (transaction.type === 'sell') {
-          if (transaction.quantity && currentQty.gt(0)) {
-            newQty = Decimal.max(0, currentQty.minus(txQty));
-            newInvested = currentQty.gt(0) ? currentInvested.times(newQty).dividedBy(currentQty) : currentInvested;
-          } else {
-            newInvested = Decimal.max(0, currentInvested.minus(txAmount));
-          }
-        } else if (transaction.type === 'split' || transaction.type === 'bonus') {
-          if (transaction.quantity) {
-            newQty = currentQty.plus(txQty);
-          }
-        }
-
-        // NOTE: Manual valuation is preserved. Do NOT overwrite current_value.
-        await (supabase.from('investments') as any)
-          .update({
-            total_invested: newInvested.toNumber(),
-            quantity: newQty.toNumber(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', transaction.investment_id)
-          .eq('user_id', userData.user.id);
-      }
 
       return insertedTx;
     },

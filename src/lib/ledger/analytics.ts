@@ -125,7 +125,7 @@ export async function getAuthoritativeDashboardStats(
       if (['bank', 'cash', 'wallet'].includes(acc.type)) {
         availablePersonalCash = availablePersonalCash.plus(balance);
       }
-      if (acc.purpose === 'savings') {
+      if (acc.purpose?.toLowerCase() === 'savings') {
         totalSavings = totalSavings.plus(balance);
       }
       if (acc.type === 'investment') {

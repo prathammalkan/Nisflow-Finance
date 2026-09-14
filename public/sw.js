@@ -1,7 +1,9 @@
 const CACHE_NAME = 'nisflow-v2';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
-  '/1l.png',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable.png',
   '/icon.svg',
 ];
 

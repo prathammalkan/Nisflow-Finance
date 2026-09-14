@@ -52,9 +52,6 @@ export function InvestmentForm({ onSuccess }: { onSuccess?: () => void }) {
         ticker: data.ticker,
         type: data.type,
         platform: data.platform,
-        units: data.units,
-        avg_purchase_price: data.avg_purchase_price,
-        current_value: data.current_value,
       });
 
       toast.success("Investment added successfully");

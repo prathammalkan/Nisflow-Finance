@@ -1,13 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import Decimal from 'decimal.js';
 import { format, parseISO } from 'date-fns';
 import { calculateNextDueDate } from '@/lib/finance/recurring';
 import { recordFinancialTransaction } from '@/lib/ledger/service';
 
 export { calculateNextDueDate };
 
+/**
+ * Fetch all ACTIVE recurring transactions for the authenticated user.
+ *
+ * DB columns used: status (text, 'active'|'inactive'), next_date (timestamptz)
+ * category FK → categories (not transaction_categories)
+ */
 export function useRecurringTransactions() {
   const supabase = createClient();
   return useQuery({
@@ -17,10 +22,10 @@ export function useRecurringTransactions() {
       if (!user) throw new Error('Not authenticated');
 
       const { data, error } = await (supabase.from('recurring_transactions') as any)
-        .select('*, account:accounts(id,name), category:transaction_categories(id,name,icon)')
-        .eq('is_active', true)
+        .select('*, account:accounts(id,name), category:categories(id,name,icon)')
+        .eq('status', 'active')
         .eq('user_id', user.id)
-        .order('next_due_date', { ascending: true });
+        .order('next_date', { ascending: true });
       if (error) throw error;
       return (data || []) as any[];
     },
@@ -35,11 +40,13 @@ export function useCreateRecurring() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
       const { user_id, ...safePayload } = payload;
-      const { error } = await (supabase.from('recurring_transactions') as any).insert({ ...safePayload, user_id: user.id });
+      const { error } = await (supabase.from('recurring_transactions') as any)
+        .insert({ ...safePayload, user_id: user.id });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
+      qc.invalidateQueries({ queryKey: ['upcoming'] });
       toast.success('Recurring transaction added');
     },
     onError: (e: any) => toast.error(e.message || 'Failed to add'),
@@ -62,6 +69,7 @@ export function useUpdateRecurring() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
+      qc.invalidateQueries({ queryKey: ['upcoming'] });
       toast.success('Updated');
     },
     onError: (e: any) => toast.error(e.message),
@@ -83,6 +91,7 @@ export function useDeleteRecurring() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
+      qc.invalidateQueries({ queryKey: ['upcoming'] });
       toast.success('Deleted');
     },
     onError: (e: any) => toast.error(e.message),
@@ -99,26 +108,32 @@ export function useMarkRecurringDone() {
       if (!user) throw new Error('Not authenticated');
 
       const todayStr = new Date().toISOString().split('T')[0];
-      const occurrenceRef = `REC:${recurring.id}:${recurring.next_due_date}`;
+      // Use next_date (actual DB column) for idempotency key
+      const occurrenceRef = `REC:${recurring.id}:${recurring.next_date}`;
 
-      // Post to authoritative double-entry ledger with deterministic idempotency
-      const recType = (recurring.type || 'expense').toLowerCase() === 'transfer' ? 'transfer' : (recurring.direction === 'in' ? 'income' : 'expense');
-      
+      // Determine transaction type from direction field
+      const recType = (() => {
+        const t = (recurring.type || '').toLowerCase();
+        if (t === 'transfer') return 'transfer';
+        if (recurring.direction === 'in') return 'income';
+        return 'expense';
+      })();
+
       const ledgerResult = await recordFinancialTransaction(supabase as any, {
         userId: user.id,
         type: recType,
         accountId: recurring.account_id,
         categoryId: recurring.category_id,
-        counterpartyId: recurring.counterparty_id,
         description: recurring.description || 'Recurring Transaction',
         amount: recurring.amount,
-        date: recurring.next_due_date || todayStr,
+        date: recurring.next_date
+          ? recurring.next_date.split('T')[0]
+          : todayStr,
         idempotencyKey: occurrenceRef,
         sourceType: 'recurring',
         sourceId: recurring.id,
-        notes: recurring.notes ? `[Recurring] ${recurring.notes}` : '[Recurring scheduled transaction]',
+        notes: '[Recurring scheduled transaction]',
         metadata: {
-          ownership: recurring.ownership || 'personal',
           frequency: recurring.frequency,
         }
       });
@@ -127,16 +142,15 @@ export function useMarkRecurringDone() {
         throw new Error(ledgerResult.error || 'Failed to post recurring transaction to ledger');
       }
 
-      // Update next_due_date
-      const nextDue = calculateNextDueDate(parseISO(recurring.next_due_date), recurring.frequency);
-      const isPastEnd = recurring.end_date && nextDue > parseISO(recurring.end_date);
+      // Advance next_date by one frequency period
+      const nextDue = calculateNextDueDate(
+        parseISO(recurring.next_date),
+        recurring.frequency
+      );
 
       const { error: updateError } = await (supabase.from('recurring_transactions') as any)
         .update({
-          next_due_date: format(nextDue, 'yyyy-MM-dd'),
-          last_created_date: todayStr,
-          is_active: isPastEnd ? false : recurring.is_active,
-          updated_at: new Date().toISOString(),
+          next_date: format(nextDue, "yyyy-MM-dd'T'HH:mm:ssxxx"),
         })
         .eq('id', recurring.id)
         .eq('user_id', user.id);
@@ -145,6 +159,7 @@ export function useMarkRecurringDone() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
+      qc.invalidateQueries({ queryKey: ['upcoming'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -171,6 +186,7 @@ export function useProcessDueRecurring() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
+      qc.invalidateQueries({ queryKey: ['upcoming'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] });
