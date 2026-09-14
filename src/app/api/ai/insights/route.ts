@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     // Fetch current month's transactions (capped at 100 to prevent huge prompts)
     const { data: currentMonthData, error } = await supabase
       .from('transactions')
-      .select('amount, direction, type, description, date, transaction_categories!transactions_category_id_fkey(name)')
+      .select('amount, direction, type, description, date, category:categories(name)')
       .eq('user_id', user.id)
       .gte('date', currentMonthStart)
       .order('date', { ascending: false })
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
 
     // Format data for AI — sanitise strings to prevent prompt injection
     const summary = (currentMonthData as any[]).map(tx =>
-      `${String(tx.date).substring(0, 10)}: ${tx.direction === 'in' ? '+' : '-'}Rs.${Number(tx.amount).toFixed(2)} (${String(tx.type || '').substring(0, 30)}) - ${String(tx.description || '').substring(0, 60)} [${(tx.transaction_categories as any)?.name || 'Uncategorized'}]`
+      `${String(tx.date).substring(0, 10)}: ${tx.direction === 'in' ? '+' : '-'}Rs.${Number(tx.amount).toFixed(2)} (${String(tx.type || '').substring(0, 30)}) - ${String(tx.description || '').substring(0, 60)} [${(tx.category as any)?.name || 'Uncategorized'}]`
     ).join('\n');
 
     const google = getGoogleAIProvider();

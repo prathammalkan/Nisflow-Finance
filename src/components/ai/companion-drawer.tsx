@@ -288,7 +288,18 @@ export function CompanionDrawer() {
 
       // Safeguard: Ensure stream produced meaningful content
       if (!fullContent || fullContent.trim().length === 0) {
-        throw new Error('NisFlow AI was unable to generate a response. Please try again.');
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  content: "NisFlow AI is thinking but didn't produce a text response. Please try rephrasing your question.",
+                  isError: false,
+                }
+              : msg
+          )
+        );
+        return;
       }
     } catch (err: any) {
       console.error('Chat error:', err);

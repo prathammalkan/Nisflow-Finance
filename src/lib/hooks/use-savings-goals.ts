@@ -15,7 +15,6 @@ export function useSavingsGoals() {
         .from("savings_goals")
         .select("*")
         .eq("user_id", user.user.id)
-        .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -105,7 +104,7 @@ export function useDeleteSavingsGoal() {
 
       const { error } = await (supabase
         .from("savings_goals") as any)
-        .update({ deleted_at: new Date().toISOString() })
+        .delete()
         .eq("id", id)
         .eq("user_id", user.user.id);
 

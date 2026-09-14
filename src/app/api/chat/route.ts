@@ -142,12 +142,12 @@ export async function POST(req: Request) {
       { data: recentTransactions },
       { data: recurringList },
     ] = await Promise.all([
-      supabase.from('accounts').select('id, name, account_type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
+      supabase.from('accounts').select('id, name, type, balance, current_balance').eq('user_id', user.id).eq('is_active', true).limit(50),
       supabase.from('counterparties').select('id, name').eq('user_id', user.id).limit(50),
       supabase.from('loans').select('id, name, loan_type, principal_amount, remaining_principal').eq('user_id', user.id).limit(20),
-      supabase.from('investments').select('id, name, symbol, asset_type, total_invested, current_value').eq('user_id', user.id).limit(20),
+      supabase.from('investments').select('id, name, ticker_symbol, asset_class, platform').eq('user_id', user.id).limit(20),
       supabase.from('transactions').select('date, amount, direction, type, description').eq('user_id', user.id).order('date', { ascending: false }).limit(10),
-      supabase.from('recurring_transactions').select('id, description, amount, type, next_due_date, is_active, frequency').eq('user_id', user.id).eq('is_active', true).limit(5),
+      supabase.from('recurring_transactions').select('id, description, amount, type, next_date, status, frequency').eq('user_id', user.id).eq('status', 'active').limit(5),
     ]);
 
     const lastUserMsg = [...sanitizedMessages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() || '';
@@ -210,9 +210,9 @@ LOAN LEDGER CONTEXT:
     }
 
     // 3. Least-Privilege Investment Scoping (Canonical schema)
-    const investmentList: Array<{ id: string; name: string; symbol?: string | null; asset_type?: string | null; total_invested?: number; current_value?: number }> = (investments as any) || [];
+    const investmentList: Array<{ id: string; name: string; ticker_symbol?: string | null; asset_class?: string | null; platform?: string | null }> = (investments as any) || [];
     const matchedInvestment = investmentList.find((h) =>
-      (h.symbol && lastUserMsg.includes(h.symbol.toLowerCase())) ||
+      (h.ticker_symbol && lastUserMsg.includes(h.ticker_symbol.toLowerCase())) ||
       (h.name && lastUserMsg.includes(h.name.toLowerCase()))
     );
 
@@ -220,20 +220,20 @@ LOAN LEDGER CONTEXT:
     if (matchedInvestment) {
       investmentSpecificContext = `
 INVESTMENT HOLDING CONTEXT:
-- Asset: ${matchedInvestment.symbol ? `${escapeForPrompt(matchedInvestment.symbol)} (${escapeForPrompt(matchedInvestment.name)})` : escapeForPrompt(matchedInvestment.name)}
-- Asset Class: ${escapeForPrompt(matchedInvestment.asset_type || 'Investment')} | Value: â‚¹${Number(matchedInvestment.current_value ?? matchedInvestment.total_invested ?? 0).toFixed(2)}
+- Asset: ${matchedInvestment.ticker_symbol ? `${escapeForPrompt(matchedInvestment.ticker_symbol)} (${escapeForPrompt(matchedInvestment.name)})` : escapeForPrompt(matchedInvestment.name)}
+- Asset Class: ${escapeForPrompt(matchedInvestment.asset_class || 'Investment')} | Platform: ${escapeForPrompt(matchedInvestment.platform || 'Unknown')}
 `;
     }
 
     // Compute Total Cash, Investments, and Net Worth from Accounts
     let totalCash = new Decimal(0);
     let totalInvestments = new Decimal(0);
-    const accRows: Array<{ id: string; name: string; account_type?: string; type?: string; balance?: number; current_balance?: number }> = (accounts as any) || [];
+    const accRows: Array<{ id: string; name: string; type?: string; balance?: number; current_balance?: number }> = (accounts as any) || [];
     const accountsListFormatted: string[] = [];
 
     for (const acc of accRows) {
       const authBal = new Decimal(acc.current_balance ?? acc.balance ?? 0);
-      const accType = acc.account_type || acc.type || 'bank';
+      const accType = acc.type || 'bank';
 
       if (accType === 'investment') {
         totalInvestments = totalInvestments.plus(authBal);

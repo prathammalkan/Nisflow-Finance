@@ -14,8 +14,19 @@ import { useSaveNetWorthSnapshot } from "@/lib/hooks/use-net-worth-history";
 import { useProfile } from "@/lib/hooks/use-profile";
 import { createClient } from "@/lib/supabase/client";
 import { format, parseISO, isToday, isYesterday } from "date-fns";
-import { Plus, ArrowRightLeft, Sparkles, ChevronRight } from "lucide-react";
+import {
+  Plus,
+  ArrowRightLeft,
+  Sparkles,
+  ChevronRight,
+  CalendarClock,
+  Info,
+} from "lucide-react";
 import { TransactionForm } from "@/components/transactions/transaction-form";
+import { generateGreeting } from "@/lib/finance/greeting-engine";
+import { calculateSafeToSpend } from "@/lib/finance/safe-to-spend";
+import { useUpcoming } from "@/lib/hooks/use-upcoming";
+import { useTodaySpent } from "@/lib/hooks/use-today-spent";
 
 function groupTransactionsByDate(transactions: any[]) {
   const groups: Record<string, any[]> = {};
@@ -42,9 +53,12 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: recent, isLoading: recentLoading } = useRecentTransactions(8);
   const { data: profile } = useProfile();
+  const { data: upcoming } = useUpcoming(5);
+  const { data: todaySpent } = useTodaySpent();
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [txFormOpen, setTxFormOpen] = useState(false);
   const [txFormType, setTxFormType] = useState<"Expense" | "Income" | "Transfer">("Expense");
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const saveSnapshot = useSaveNetWorthSnapshot();
   const hasSaved = useRef(false);
 
@@ -99,19 +113,44 @@ export default function DashboardPage() {
     checkOnboarding();
   }, []);
 
-  const greeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
-  };
-
   const needsOnboarding = !statsLoading && !onboardingDismissed;
 
   const available = stats?.availablePersonalCash || 0;
   const income = stats?.thisMonthIncome || 0;
   const expenses = stats?.thisMonthExpenses || 0;
   const spentPercent = income > 0 ? Math.min(100, (expenses / income) * 100) : 0;
+
+  // Calculate upcoming committed expenses
+  const upcomingExpenses = (upcoming || [])
+    .filter((item) => item.direction === "out")
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  // Safe-to-spend calculation
+  const safeToSpend = calculateSafeToSpend({
+    liquidCash: available,
+    upcomingCommitted: upcomingExpenses,
+    plannedSavings: 0,
+    todaySpent: todaySpent || 0,
+  });
+
+  // Contextual greeting
+  const now = new Date();
+  const greetingData = generateGreeting({
+    displayName: profile?.displayName?.split(" ")[0] || "there",
+    hour: now.getHours(),
+    availableCash: available,
+    thisMonthIncome: income,
+    thisMonthExpenses: expenses,
+    todaySpent: todaySpent || 0,
+    budgetTotal: 0,
+    budgetSpent: 0,
+    upcomingCount: (upcoming || []).length,
+    savingsGoalProgress: 0,
+    needsReviewCount: stats?.needsReviewCount || 0,
+    dayOfMonth: now.getDate(),
+    dayOfWeek: now.getDay(),
+    totalAccounts: stats?.totalAccounts || 0,
+  });
 
   const grouped = groupTransactionsByDate(recent || []);
   const sortedDateKeys = Object.keys(grouped).sort((a, b) =>
@@ -135,69 +174,181 @@ export default function DashboardPage() {
           needsOnboarding && "blur-sm pointer-events-none select-none"
         )}
       >
-        {/* Greeting */}
+        {/* Greeting + Hero number */}
         <div className="pt-2">
-          <p className="text-sm text-muted-foreground">
-            {greeting()}
-            {profile?.displayName
-              ? `, ${profile.displayName.split(" ")[0]}`
-              : ""}
-          </p>
-
-          {/* Hero number */}
           {statsLoading ? (
-            <Skeleton className="mt-2 h-14 w-48" />
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-56" />
+              <Skeleton className="h-12 w-48 mt-2" />
+            </div>
           ) : (
-            <div className="mt-1">
-              <div className="text-5xl font-light tracking-tight font-tabular-nums text-foreground">
-                {formatINR(available)}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                available this month
-              </p>
-            </div>
-          )}
-
-          {/* Progress bar */}
-          {!statsLoading && income > 0 && (
-            <div className="mt-5">
-              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-                  style={{ width: `${spentPercent}%` }}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="text-xs text-muted-foreground">
-                  <span className="text-income font-medium">{formatINR(income)}</span>
-                  <span className="ml-1">income</span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  <span className="text-expense font-medium">{formatINR(expenses)}</span>
-                  <span className="ml-1">spent</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* No accounts state */}
-          {!statsLoading && (stats?.totalAccounts || 0) === 0 && (
-            <div className="mt-6 rounded-xl border border-dashed border-border p-6 text-center">
+            <>
               <p className="text-sm font-medium text-foreground">
-                Your money starts here.
+                {greetingData.primary}
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add your first account to see your financial picture.
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {greetingData.secondary}
               </p>
-              <Link
-                href="/accounts"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Add account
-              </Link>
-            </div>
+
+              {/* Safe-to-spend hero */}
+              <div className="mt-3">
+                {safeToSpend.isEstimated ? (
+                  <div className="mt-2">
+                    <div className="text-5xl font-light tracking-tight font-tabular-nums text-foreground">
+                      {formatINR(available)}
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      available this month
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-5xl font-light tracking-tight font-tabular-nums text-foreground">
+                      {formatINR(safeToSpend.safeToSpend)}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <p className="text-sm text-muted-foreground">
+                        safe to spend
+                      </p>
+                      <button
+                        onClick={() => setShowBreakdown(!showBreakdown)}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="How is this calculated?"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Safe-to-spend breakdown */}
+                    {showBreakdown && (
+                      <div className="mt-3 rounded-xl border border-border/60 bg-card p-3 text-sm space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          How this is calculated
+                        </p>
+                        {safeToSpend.lines.map((line, i) => (
+                          <div key={i} className="flex items-center justify-between">
+                            <span className="text-muted-foreground">
+                              {line.label}
+                              {line.type !== "actual" && (
+                                <span className="ml-1 text-[10px] uppercase text-muted-foreground/60">
+                                  {line.type}
+                                </span>
+                              )}
+                            </span>
+                            <span className={cn(
+                              "font-tabular-nums font-medium",
+                              i === 0 ? "text-foreground" : "text-muted-foreground"
+                            )}>
+                              {i === 0 ? "" : "−"}{formatINR(line.amount)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="border-t border-border/60 pt-2 flex items-center justify-between font-medium">
+                          <span className="text-foreground">Safe to spend</span>
+                          <span className="font-tabular-nums text-foreground">
+                            {formatINR(safeToSpend.safeToSpend)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Monthly progress bar */}
+              {income > 0 && (
+                <div className="mt-5">
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-700 ease-out",
+                        spentPercent > 90 ? "bg-expense" : "bg-primary"
+                      )}
+                      style={{ width: `${spentPercent}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="text-xs text-muted-foreground">
+                      <span className="text-income font-medium">{formatINR(income)}</span>
+                      <span className="ml-1">income</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span className="text-expense font-medium">{formatINR(expenses)}</span>
+                      <span className="ml-1">spent</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* No accounts state */}
+              {(stats?.totalAccounts || 0) === 0 && (
+                <div className="mt-6 rounded-xl border border-dashed border-border p-6 text-center">
+                  <p className="text-sm font-medium text-foreground">
+                    Your money starts here.
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Add your first account to see your financial picture.
+                  </p>
+                  <Link
+                    href="/accounts"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    Add account
+                  </Link>
+                </div>
+              )}
+            </>
           )}
         </div>
+
+        {/* Coming Up section */}
+        {(stats?.totalAccounts || 0) > 0 && (upcoming || []).length > 0 && (
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5" />
+              Coming up
+            </h3>
+            <div className="rounded-xl border border-border/60 bg-card overflow-hidden divide-y divide-border/60">
+              {(upcoming || []).map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 px-4 py-3 min-h-[52px]"
+                >
+                  <div className={cn(
+                    "h-9 w-9 shrink-0 rounded-xl flex items-center justify-center text-xs font-medium select-none",
+                    item.direction === "out"
+                      ? "bg-expense-surface text-expense"
+                      : "bg-income-surface text-income"
+                  )}>
+                    {item.direction === "out" ? "−" : "+"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {item.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.relativeLabel}
+                      <span className="mx-1">·</span>
+                      {item.frequency}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-sm font-semibold font-tabular-nums shrink-0",
+                      item.direction === "out"
+                        ? "text-expense"
+                        : "text-income"
+                    )}
+                  >
+                    {item.direction === "out" ? "−" : "+"}
+                    {formatINR(item.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* AI insight — quiet contextual line */}
         {!statsLoading && (stats?.totalAccounts || 0) > 0 && (
@@ -208,8 +359,7 @@ export default function DashboardPage() {
                 ? `${stats!.needsReviewCount} transaction${stats!.needsReviewCount === 1 ? "" : "s"} need${stats!.needsReviewCount === 1 ? "s" : ""} your review.`
                 : expenses > 0
                 ? `You have spent ${Math.round(spentPercent)}% of your income this month.`
-                : "No expenses recorded yet this month."}
-              {" "}
+                : "No expenses recorded yet this month."}{" "}
               <Link href="/insights" className="text-primary hover:underline">
                 Ask NisFlow →
               </Link>
@@ -240,8 +390,15 @@ export default function DashboardPage() {
                           href={`/transactions/${tx.id}`}
                           className="flex items-center gap-3 px-4 py-3 min-h-[56px] hover:bg-muted/40 transition-colors"
                         >
-                          <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center bg-muted text-sm select-none">
-                            {tx.category?.icon || (tx.category?.name ? tx.category.name.charAt(0) : "·")}
+                          <div className={cn(
+                            "h-9 w-9 shrink-0 rounded-xl flex items-center justify-center text-sm select-none",
+                            tx.direction === "out"
+                              ? "bg-expense-surface text-expense"
+                              : tx.direction === "in"
+                              ? "bg-income-surface text-income"
+                              : "bg-muted text-muted-foreground"
+                          )}>
+                            {tx.category?.name ? tx.category.name.charAt(0).toUpperCase() : "·"}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">
@@ -261,7 +418,7 @@ export default function DashboardPage() {
                                 : "text-foreground"
                             )}
                           >
-                            {tx.direction === "in" ? "+" : tx.direction === "out" ? "-" : ""}
+                            {tx.direction === "in" ? "+" : tx.direction === "out" ? "−" : ""}
                             {formatINR(tx.amount)}
                           </span>
                         </Link>

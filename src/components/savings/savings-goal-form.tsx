@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { useCreateSavingsGoal, useUpdateSavingsGoal, useDeleteSavingsGoal } from "@/lib/hooks/use-savings-goals";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -20,10 +19,8 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
     name: "",
     target_amount: "",
     current_amount: "0",
-    deadline: "",
-    monthly_contribution: "",
+    target_date: "",
     status: "active",
-    color: "#3b82f6"
   });
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -38,53 +35,49 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
         name: initialData.name || "",
         target_amount: initialData.target_amount?.toString() || "",
         current_amount: initialData.current_amount?.toString() || "0",
-        deadline: initialData.deadline || "",
-        monthly_contribution: initialData.monthly_contribution?.toString() || "",
+        // DB column is target_date (timestamptz) — extract date part for the input
+        target_date: initialData.target_date
+          ? String(initialData.target_date).split("T")[0]
+          : "",
         status: initialData.status || "active",
-        color: initialData.color || "#3b82f6"
       });
     } else {
       setFormData({
         name: "",
         target_amount: "",
         current_amount: "0",
-        deadline: "",
-        monthly_contribution: "",
+        target_date: "",
         status: "active",
-        color: "#3b82f6"
       });
     }
   }, [initialData, isOpen]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const payload = {
       name: formData.name,
       target_amount: parseFloat(formData.target_amount) || 0,
       current_amount: parseFloat(formData.current_amount) || 0,
-      deadline: formData.deadline || null,
-      monthly_contribution: formData.monthly_contribution ? parseFloat(formData.monthly_contribution) : null,
+      // Send as ISO string if provided, else null
+      target_date: formData.target_date ? new Date(formData.target_date).toISOString() : null,
       status: formData.status,
-      color: formData.color
     };
 
     if (initialData?.id) {
       updateMutation.mutate({ id: initialData.id, ...payload }, {
-        onSuccess: () => onClose()
+        onSuccess: () => onClose(),
       });
     } else {
       createMutation.mutate(payload, {
-        onSuccess: () => onClose()
+        onSuccess: () => onClose(),
       });
     }
   };
@@ -95,21 +88,38 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
         onSuccess: () => {
           setIsDeleteDialogOpen(false);
           onClose();
-        }
+        },
       });
     }
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  // Progress percentage for display when editing
+  const progress = initialData
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          (parseFloat(formData.current_amount) /
+            Math.max(1, parseFloat(formData.target_amount))) *
+            100
+        )
+      )
+    : 0;
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>{initialData ? "Edit Savings Goal" : "New Savings Goal"}</DialogTitle>
+            <DialogTitle>
+              {initialData ? "Edit Savings Goal" : "New Savings Goal"}
+            </DialogTitle>
           </DialogHeader>
+
           <div className="grid gap-4 py-4">
+            {/* Goal name */}
             <div className="grid gap-2">
               <Label htmlFor="name">Goal Name</Label>
               <Input
@@ -118,13 +128,14 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
                 value={formData.name}
                 onChange={handleChange}
                 required
-                placeholder="e.g. New Car"
+                placeholder="e.g. Emergency Fund"
               />
             </div>
-            
+
+            {/* Amounts */}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="target_amount">Target Amount (₹)</Label>
+                <Label htmlFor="target_amount">Target (₹)</Label>
                 <Input
                   id="target_amount"
                   name="target_amount"
@@ -137,7 +148,7 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="current_amount">Current Amount (₹)</Label>
+                <Label htmlFor="current_amount">Saved so far (₹)</Label>
                 <Input
                   id="current_amount"
                   name="current_amount"
@@ -151,68 +162,55 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="deadline">Target Date</Label>
-                <Input
-                  id="deadline"
-                  name="deadline"
-                  type="date"
-                  value={formData.deadline}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="monthly_contribution">Monthly Contrib. (₹)</Label>
-                <Input
-                  id="monthly_contribution"
-                  name="monthly_contribution"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.monthly_contribution}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="status">Status</Label>
-                <div className="relative">
-                  <select
-                    id="status"
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="color">Theme Color</Label>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    id="color"
-                    name="color"
-                    type="color"
-                    value={formData.color}
-                    onChange={handleChange}
-                    className="h-10 w-full p-1 cursor-pointer"
+            {/* Progress bar when editing */}
+            {initialData && parseFloat(formData.target_amount) > 0 && (
+              <div className="space-y-1">
+                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-500"
+                    style={{ width: `${progress}%` }}
                   />
                 </div>
+                <p className="text-xs text-muted-foreground text-right">
+                  {Math.round(progress)}% of target
+                </p>
+              </div>
+            )}
+
+            {/* Target date + Status */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="target_date">Target Date</Label>
+                <Input
+                  id="target_date"
+                  name="target_date"
+                  type="date"
+                  value={formData.target_date}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="status">Status</Label>
+                <select
+                  id="status"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                </select>
               </div>
             </div>
           </div>
+
           <DialogFooter className="flex justify-between sm:justify-between items-center">
             {initialData && (
-              <Button 
-                type="button" 
-                variant="destructive" 
+              <Button
+                type="button"
+                variant="destructive"
                 onClick={() => setIsDeleteDialogOpen(true)}
                 disabled={deleteMutation.isPending || isPending}
               >
@@ -220,11 +218,16 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
               </Button>
             )}
             <div className="flex gap-2 ml-auto">
-              <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={isPending}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : "Save Goal"}
+                {isPending ? "Saving…" : "Save Goal"}
               </Button>
             </div>
           </DialogFooter>
@@ -234,7 +237,7 @@ export function SavingsGoalForm({ isOpen, onClose, initialData }: SavingsGoalFor
           open={isDeleteDialogOpen}
           onOpenChange={setIsDeleteDialogOpen}
           title="Delete Savings Goal"
-          description={`Are you sure you want to delete "${formData.name || 'this goal'}"?`}
+          description={`Are you sure you want to delete "${formData.name || "this goal"}"? This cannot be undone.`}
           confirmLabel="Delete Goal"
           onConfirm={handleDelete}
           isLoading={deleteMutation.isPending}
