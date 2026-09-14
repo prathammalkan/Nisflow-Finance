@@ -130,7 +130,7 @@ export default function DashboardPage() {
     liquidCash: available,
     upcomingCommitted: upcomingExpenses,
     plannedSavings: 0,
-    todaySpent: todaySpent || 0,
+    hasAccounts: (stats?.totalAccounts || 0) > 0,
   });
 
   // Contextual greeting
@@ -193,7 +193,7 @@ export default function DashboardPage() {
 
               {/* Safe-to-spend hero */}
               <div className="mt-3">
-                {safeToSpend.isEstimated ? (
+                {safeToSpend.isUnavailable ? (
                   <div className="mt-2">
                     <div className="text-5xl font-light tracking-tight font-tabular-nums text-foreground">
                       {formatINR(available)}
@@ -230,9 +230,9 @@ export default function DashboardPage() {
                           <div key={i} className="flex items-center justify-between">
                             <span className="text-muted-foreground">
                               {line.label}
-                              {line.type !== "actual" && (
+                              {line.type === 'planned' && (
                                 <span className="ml-1 text-[10px] uppercase text-muted-foreground/60">
-                                  {line.type}
+                                  planned
                                 </span>
                               )}
                             </span>
